@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+/*
+  AK Solar colours, named after the things on a battery.
+  casing = the dark plastic case, plate = the light lead-grey background,
+  sun = solar yellow (main buttons), terminal = warning red, cell = healthy green.
+*/
+@theme inline {
+  --color-casing: #1c2b33;
+  --color-plate: #eef0ec;
+  --color-line: #d3d8d2;
+  --color-lead: #5a686e;
+  --color-sun: #f5b400;
+  --color-sun-deep: #dca000;
+  --color-terminal: #c23b2e;
+  --color-terminal-deep: #a42f24;
+  --color-cell: #2e7d4f;
+  --color-focus: #1d5fd0;
+
+  --font-sans: var(--font-barlow), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-barlow-condensed), ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  .on-dark:focus-visible {
+    outline-color: #ffffff;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-[15px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply bg-sun text-casing hover:bg-sun-deep;
+  }
+  .btn-quiet {
+    @apply border border-line bg-white text-casing hover:bg-plate;
+  }
+  .btn-danger {
+    @apply bg-terminal text-white hover:bg-terminal-deep;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+  .input {
+    @apply block w-full rounded-md border border-line bg-white px-3 py-2.5 text-base text-casing placeholder:text-lead/60;
+  }
+  .input[aria-invalid="true"] {
+    @apply border-terminal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
