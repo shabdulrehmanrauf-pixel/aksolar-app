@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { getBrowserClient } from "@/lib/supabase/lazy";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -17,7 +17,7 @@ export default function LoginForm() {
     setError(null);
 
     try {
-      const supabase = createClient();
+      const supabase = await getBrowserClient();
       const { error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -33,7 +33,7 @@ export default function LoginForm() {
         return;
       }
 
-      router.replace("/inventory");
+      router.replace("/");
       router.refresh();
     } catch {
       setError("Could not reach the server. Check your internet and try again.");
