@@ -5,7 +5,14 @@ import InventoryClient from "./InventoryClient";
 
 export const metadata: Metadata = { title: "Inventory" };
 
-export default async function InventoryPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function InventoryPage({ searchParams }: { searchParams: SearchParams }) {
+  // Links from Home and the search box: /inventory?filter=low and /inventory?q=Osaka
+  const sp = await searchParams;
+  const q = typeof sp.q === "string" ? sp.q : "";
+  const lowOnly = sp.filter === "low";
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("inventory")
@@ -15,10 +22,8 @@ export default async function InventoryPage() {
 
   if (error) {
     return (
-      <div className="max-w-xl rounded-lg border border-terminal/40 bg-white p-6">
-        <h1 className="font-display text-3xl font-bold">
-          Inventory could not be loaded
-        </h1>
+      <div className="card max-w-xl border-terminal/40 p-6">
+        <h1 className="font-display text-3xl font-bold">Inventory could not be loaded</h1>
         <p className="mt-3 text-lead">
           The app is connected, but Supabase did not return the stock list. The
           most common reason is that the database table has not been created
@@ -33,5 +38,13 @@ export default async function InventoryPage() {
     );
   }
 
-  return <InventoryClient items={(data ?? []) as InventoryItem[]} />;
+  return (
+    <InventoryClient
+      // A new key makes the list start fresh when a link changes the search or the filter.
+      key={`${q}|${lowOnly}`}
+      items={(data ?? []) as InventoryItem[]}
+      initialQuery={q}
+      initialLow={lowOnly}
+    />
+  );
 }

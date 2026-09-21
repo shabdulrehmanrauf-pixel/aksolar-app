@@ -3,13 +3,16 @@ const SEGMENTS = 6;
 /**
  * A small battery-shaped gauge. Red when stock is at or below the reorder
  * level, green otherwise. A full gauge means about three times the reorder level.
+ * Pass `animate` to make the bars fill up one by one when the gauge appears.
  */
 export default function StockGauge({
   quantity,
   reorderLevel,
+  animate = false,
 }: {
   quantity: number;
   reorderLevel: number;
+  animate?: boolean;
 }) {
   const wellStocked = Math.max(reorderLevel * 3, 3);
   const filled =
@@ -24,11 +27,12 @@ export default function StockGauge({
       aria-label={`${quantity} in stock, reorder at ${reorderLevel}`}
       className="inline-flex items-center"
     >
-      <span className="flex gap-[2px] rounded-[3px] border-[1.5px] border-lead/60 p-[2px]">
+      <span className="flex gap-[2px] rounded-[4px] border-[1.5px] border-lead/60 p-[2px]">
         {Array.from({ length: SEGMENTS }).map((_, i) => (
           <span
             key={i}
-            className={`h-3.5 w-1.5 rounded-[1px] ${
+            style={animate ? ({ "--seg": i } as React.CSSProperties) : undefined}
+            className={`h-3.5 w-1.5 rounded-[1.5px] ${animate && i < filled ? "gauge-seg" : ""} ${
               i < filled ? (low ? "bg-terminal" : "bg-cell") : "bg-line"
             }`}
           />

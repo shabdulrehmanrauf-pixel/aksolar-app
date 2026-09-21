@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useState } from "react";
+import Icon from "@/components/Icons";
+import Sheet from "@/components/Sheet";
+import { focusFirstError } from "@/lib/formFocus";
+import { getBrowserClient } from "@/lib/supabase/lazy";
 import type { Category, InventoryItem } from "@/lib/types";
 import {
   ACCESSORY_TYPES,
@@ -206,20 +209,6 @@ export default function ItemForm({
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  // Escape closes the panel; the page behind does not scroll while it is open.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !saving) onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previous;
-    };
-  }, [onClose, saving]);
-
   function changeCategory(category: Category) {
     setForm((prev) => ({ ...prev, category, type: "" }));
     setErrors({});
@@ -231,12 +220,13 @@ export default function ItemForm({
     setErrors(found);
     if (Object.keys(found).length > 0) {
       setSaveError("Some fields need attention. They are marked in red.");
+      focusFirstError();
       return;
     }
 
     setSaving(true);
     setSaveError(null);
-    const supabase = createClient();
+    const supabase = await getBrowserClient();
     const payload = toPayload(form);
     const { error } = item
       ? await supabase.from("inventory").update(payload).eq("id", item.id)
@@ -259,15 +249,8 @@ export default function ItemForm({
     Number(form.sale_price) < Number(form.cost_price);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-casing/60">
-      <form
-        onSubmit={onSubmit}
-        noValidate
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="item-form-title"
-        className="flex h-full w-full flex-col bg-white shadow-xl md:max-w-xl"
-      >
+    <Sheet onClose={onClose} labelledBy="item-form-title" dismissable={!saving}>
+      <form onSubmit={onSubmit} noValidate className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <h2 id="item-form-title" className="font-display text-2xl font-bold">
             {item ? "Edit item" : "Add item"}
@@ -276,9 +259,10 @@ export default function ItemForm({
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="btn btn-quiet btn-sm"
+            aria-label="Close"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-lead transition-colors hover:bg-plate disabled:opacity-60"
           >
-            Close
+            <Icon name="x" className="h-5 w-5" />
           </button>
         </div>
 
@@ -442,7 +426,7 @@ export default function ItemForm({
               />
             </div>
             {saleBelowCost && (
-              <p className="rounded-md bg-sun/20 px-3 py-2 text-sm">
+              <p className="rounded-xl bg-sun/20 px-3 py-2 text-sm">
                 The sale price is lower than the cost price. You can still save it.
               </p>
             )}
@@ -467,7 +451,7 @@ export default function ItemForm({
             </div>
           </fieldset>
 
-          <details className="rounded-md border border-line">
+          <details className="rounded-xl border border-line">
             <summary className="cursor-pointer px-4 py-3 font-display text-xl font-semibold">
               Tax details for FBR (optional)
             </summary>
@@ -499,9 +483,9 @@ export default function ItemForm({
           </details>
         </div>
 
-        <div className="border-t border-line bg-white px-5 py-4">
+        <div className="pb-safe border-t border-line bg-white px-5 py-4">
           {saveError && (
-            <p role="alert" className="mb-3 rounded-md bg-terminal/10 px-3 py-2 text-sm text-terminal-deep">
+            <p role="alert" className="mb-3 rounded-xl bg-terminal/10 px-3 py-2 text-sm text-terminal-deep">
               {saveError}
             </p>
           )}
@@ -515,6 +499,6 @@ export default function ItemForm({
           </div>
         </div>
       </form>
-    </div>
+    </Sheet>
   );
 }
