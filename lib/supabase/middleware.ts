@@ -51,7 +51,7 @@ export async function updateSession(request: NextRequest) {
   };
 
   if (!user && !onLoginPage) return redirectTo("/login");
-  if (user && onLoginPage) return redirectTo("/inventory");
+  if (user && onLoginPage) return redirectTo("/");
 
   return response;
 }
