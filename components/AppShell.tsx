@@ -1,10 +1,14 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import LogoMark from "./LogoMark";
+import CommandHost from "./CommandHost";
 import NavLinks from "./NavLinks";
-import SignOutButton from "./SignOutButton";
+import Sidebar from "./Sidebar";
+import TopBar from "./TopBar";
 
+/**
+ * The frame around every signed-in screen:
+ * phone and tablet = top bar + bottom tab bar, desktop (1024px+) = dark sidebar + top bar.
+ */
 export default async function AppShell({
   children,
 }: {
@@ -16,29 +20,17 @@ export default async function AppShell({
   } = await supabase.auth.getUser();
 
   if (!user) redirect("/login");
+  const email = user.email ?? "Signed in";
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="bg-casing text-white">
-        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-5 px-4">
-          <Link href="/inventory" className="on-dark flex items-center gap-2.5">
-            <LogoMark className="h-7 w-7" />
-            <span className="font-display text-xl font-bold tracking-wide">
-              AK Solar
-            </span>
-          </Link>
-          <NavLinks />
-          <div className="ml-auto flex items-center gap-3">
-            <span className="hidden max-w-56 truncate text-sm text-white/70 sm:block">
-              {user.email}
-            </span>
-            <SignOutButton />
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:py-10">
-        {children}
-      </main>
+    <div className="min-h-dvh">
+      <Sidebar email={email} />
+      <div className="lg:pl-64">
+        <TopBar email={email} />
+        <main className="mx-auto w-full max-w-7xl px-4 pb-28 pt-5 lg:px-8 lg:pb-14 lg:pt-8">{children}</main>
+      </div>
+      <NavLinks variant="bottom" />
+      <CommandHost />
     </div>
   );
 }
