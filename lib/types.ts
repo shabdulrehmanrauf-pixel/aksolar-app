@@ -20,3 +20,16 @@ export type InventoryItem = {
   created_at: string;
   updated_at: string;
 };
+
+export type RegistrationType = "Registered" | "Unregistered";
+
+export type Customer = {
+  id: string;
+  name: string;
+  phone: string | null;
+  address: string | null;
+  registration_type: RegistrationType;
+  cnic_or_ntn: string | null;
+  created_at: string;
+  updated_at: string;
+};
