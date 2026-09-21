@@ -7,6 +7,7 @@
 */
 @theme inline {
   --color-casing: #1c2b33;
+  --color-casing-2: #2b4450;
   --color-plate: #eef0ec;
   --color-line: #d3d8d2;
   --color-lead: #5a686e;
@@ -15,15 +16,25 @@
   --color-terminal: #c23b2e;
   --color-terminal-deep: #a42f24;
   --color-cell: #2e7d4f;
+  --color-cell-deep: #24693f; /* green text on a pale green tint (passes contrast) */
   --color-focus: #1d5fd0;
 
   --font-sans: var(--font-barlow), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-barlow-condensed), ui-sans-serif, system-ui, sans-serif;
+
+  --shadow-card: 0 1px 2px rgb(16 32 40 / 0.05), 0 10px 28px -14px rgb(16 32 40 / 0.16);
+  --shadow-lift: 0 2px 4px rgb(16 32 40 / 0.06), 0 22px 44px -18px rgb(16 32 40 / 0.28);
 }
 
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background:
+      radial-gradient(52rem 26rem at 100% -8%, rgb(245 180 0 / 0.13), transparent 62%),
+      radial-gradient(44rem 26rem at -8% 6%, rgb(29 95 208 / 0.07), transparent 60%),
+      #eef0ec;
   }
   :focus-visible {
     outline: 2px solid var(--color-focus);
@@ -35,11 +46,13 @@
 }
 
 @layer components {
+  /* ---------- Buttons and inputs ---------- */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-[15px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[15px] font-semibold transition duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60;
   }
   .btn-primary {
-    @apply bg-sun text-casing hover:bg-sun-deep;
+    @apply bg-sun text-casing shadow-[0_6px_16px_-6px_rgb(245_180_0_/_0.7)] hover:bg-sun-deep;
+    background-image: linear-gradient(180deg, #ffc61f 0%, #f5b400 100%);
   }
   .btn-quiet {
     @apply border border-line bg-white text-casing hover:bg-plate;
@@ -48,13 +61,168 @@
     @apply bg-terminal text-white hover:bg-terminal-deep;
   }
   .btn-sm {
-    @apply px-3 py-1.5 text-sm;
+    @apply min-h-9 px-3 py-1.5 text-sm;
   }
   .input {
-    @apply block w-full rounded-md border border-line bg-white px-3 py-2.5 text-base text-casing placeholder:text-lead/60;
+    @apply block w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-base text-casing transition-colors placeholder:text-lead/60 hover:border-lead/40;
   }
   .input[aria-invalid="true"] {
     @apply border-terminal;
+  }
+
+  /* ---------- Surfaces ---------- */
+  .card {
+    @apply rounded-2xl border border-line/60 bg-white shadow-card;
+  }
+  .card-hover {
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+  .card-hover:hover {
+    transform: translate3d(0, -2px, 0);
+    box-shadow: var(--shadow-lift);
+  }
+  .hero-card {
+    background:
+      radial-gradient(110% 140% at 100% 0%, rgb(245 180 0 / 0.20), transparent 50%),
+      linear-gradient(135deg, #1c2b33 0%, #223640 55%, #2b4450 100%);
+  }
+  .sidebar-bg {
+    background:
+      radial-gradient(100% 34% at 0% 0%, rgb(245 180 0 / 0.16), transparent 62%),
+      linear-gradient(180deg, #1c2b33 0%, #16232a 100%);
+  }
+  .login-art {
+    background:
+      radial-gradient(90% 60% at 100% 100%, rgb(245 180 0 / 0.24), transparent 60%),
+      radial-gradient(70% 50% at 0% 0%, rgb(46 125 79 / 0.22), transparent 60%),
+      linear-gradient(160deg, #1c2b33 0%, #223640 100%);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* ---------- Motion (transform and opacity only, so it stays smooth and cheap) ---------- */
+  .anim-rise {
+    animation: rise 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: calc(var(--i, 0) * 45ms);
+  }
+  /* Slides in but is never invisible, so the biggest element on the page paints immediately (good for Lighthouse LCP). */
+  .anim-slide {
+    animation: slide 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .anim-fade {
+    animation: fade 0.2s ease-out both;
+  }
+  .anim-pop {
+    animation: pop 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .sheet-panel {
+    animation: sheet-up 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  @media (min-width: 768px) {
+    .sheet-panel {
+      animation-name: sheet-right;
+    }
+  }
+  .gauge-seg {
+    transform-origin: bottom;
+    animation: seg-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: calc(var(--seg, 0) * 60ms + 200ms);
+  }
+  .mic-live {
+    animation: mic-ring 1.3s ease-out infinite;
+  }
+  .skeleton {
+    background: linear-gradient(90deg, #e2e6e0 20%, #f2f4f0 40%, #e2e6e0 60%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slide {
+  from {
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sheet-up {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes sheet-right {
+  from {
+    transform: translate3d(100%, 0, 0);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes seg-in {
+  from {
+    opacity: 0;
+    transform: scaleY(0.15);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@keyframes mic-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgb(194 59 46 / 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 14px rgb(194 59 46 / 0);
   }
 }
 

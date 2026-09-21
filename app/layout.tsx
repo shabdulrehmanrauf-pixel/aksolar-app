@@ -26,6 +26,7 @@ export const viewport: Viewport = {
   themeColor: "#1c2b33",
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -35,7 +36,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${barlow.variable} ${barlowCondensed.variable}`}>
-      <body className="bg-plate font-sans text-casing antialiased">
+      <body className="font-sans text-casing antialiased">
         {children}
       </body>
     </html>
