@@ -91,3 +91,75 @@ export type BusinessProfile = {
   province: string | null;
   phone: string | null;
 };
+
+/* ---------- Battery charging slips + battery claims (Phase 6) ---------- */
+/* Neither of these is an FBR document. They are shop-only slips, kept out of public.invoices. */
+
+export type Distributor = {
+  id: string;
+  name: string;
+  phone: string | null;
+  address: string | null;
+  note: string | null;
+};
+
+/** One row of the suggested-price list shown when starting a new charging job. Always editable per slip. */
+export type ChargingPriceListItem = {
+  id: string;
+  label: string;
+  price: number;
+};
+
+export type ChargingJobStatus = "in_shop" | "collected" | "unclaimed";
+
+/** A customer's own battery, dropped off to be charged. */
+export type ChargingJob = {
+  id: string;
+  slip_number: string;
+  customer_id: string | null;
+  customer_name: string;
+  customer_phone: string | null;
+  battery_brand: string;
+  battery_model: string;
+  battery_number: string | null;
+  price: number;
+  note: string | null;
+  received_date: string; // YYYY-MM-DD
+  due_date: string;      // received_date + 3 days
+  status: ChargingJobStatus;
+  collected_at: string | null;
+  created_at: string;
+};
+
+export type BatteryClaimStatus =
+  | "received"            // taken in from the customer
+  | "sent_to_distributor" // sent off for warranty inspection
+  | "approved"            // distributor accepted the claim
+  | "rejected"            // distributor declined the claim
+  | "given_to_customer"   // replacement handed over, customer's slip collected back
+  | "settled";            // we have recovered the claim from the distributor
+
+/** A battery bought from us, sent back to its distributor under warranty. */
+export type BatteryClaim = {
+  id: string;
+  claim_number: string;
+  customer_id: string | null;
+  customer_name: string;
+  customer_phone: string | null;
+  battery_brand: string;
+  battery_model: string;
+  battery_number: string | null;
+  original_invoice_id: string | null;
+  distributor_id: string | null;
+  claim_amount: number | null;    // value of the replacement, recovered from the distributor
+  extra_charges: number | null;   // optional: acid, service charges etc, collected from the customer directly
+  note: string | null;
+  status: BatteryClaimStatus;
+  received_date: string;
+  sent_to_distributor_at: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+  given_to_customer_at: string | null;
+  settled_at: string | null;
+  created_at: string;
+};
