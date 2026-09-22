@@ -18,7 +18,7 @@ const barlowCondensed = Barlow_Condensed({
 
 export const metadata: Metadata = {
   title: { default: "AK Solar", template: "%s | AK Solar" },
-  description: "Stock, customers and invoices for Al Karam Battery and Solar.",
+  description: "Stock, customers and invoices for Al Karam Batteries & Solar.",
   robots: { index: false, follow: false },
 };
 
