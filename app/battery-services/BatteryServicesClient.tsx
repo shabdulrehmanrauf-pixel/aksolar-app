@@ -62,13 +62,14 @@ export default function BatteryServicesClient({
   const router = useRouter();
   const searchParams = useSearchParams();
   // Lets the Home screen's "Claim" and "Charging" buttons land directly on the
-  // right tab (and open the right form), via /battery-services?tab=...&new=1.
+  // right tab, via /battery-services?tab=claims (or tab=charging). It only
+  // switches the tab — it never opens the new-slip form by itself; the user
+  // still has to tap "New claim" / "New charging slip" for that.
   const initialTab: Tab = searchParams.get("tab") === "claims" ? "claims" : "charging";
-  const openOnLoad = searchParams.get("new") === "1";
   const [tab, setTab] = useState<Tab>(initialTab);
   const [query, setQuery] = useState("");
-  const [jobFormOpen, setJobFormOpen] = useState(openOnLoad && initialTab === "charging");
-  const [claimFormOpen, setClaimFormOpen] = useState(openOnLoad && initialTab === "claims");
+  const [jobFormOpen, setJobFormOpen] = useState(false);
+  const [claimFormOpen, setClaimFormOpen] = useState(false);
   const [statusTarget, setStatusTarget] = useState<BatteryClaim | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
