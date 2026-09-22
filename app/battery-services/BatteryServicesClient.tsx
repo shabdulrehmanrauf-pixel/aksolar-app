@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Icon from "@/components/Icons";
 import PageHeader from "@/components/PageHeader";
@@ -60,10 +60,15 @@ export default function BatteryServicesClient({
   setupIncomplete: boolean;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("charging");
+  const searchParams = useSearchParams();
+  // Lets the Home screen's "Claim" and "Charging" buttons land directly on the
+  // right tab (and open the right form), via /battery-services?tab=...&new=1.
+  const initialTab: Tab = searchParams.get("tab") === "claims" ? "claims" : "charging";
+  const openOnLoad = searchParams.get("new") === "1";
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [query, setQuery] = useState("");
-  const [jobFormOpen, setJobFormOpen] = useState(false);
-  const [claimFormOpen, setClaimFormOpen] = useState(false);
+  const [jobFormOpen, setJobFormOpen] = useState(openOnLoad && initialTab === "charging");
+  const [claimFormOpen, setClaimFormOpen] = useState(openOnLoad && initialTab === "claims");
   const [statusTarget, setStatusTarget] = useState<BatteryClaim | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
