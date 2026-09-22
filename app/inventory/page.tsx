@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import type { InventoryItem } from "@/lib/types";
+import BatteryStockCard from "./BatteryStockCard";
 import InventoryClient from "./InventoryClient";
 
 export const metadata: Metadata = { title: "Inventory" };
@@ -45,6 +46,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Se
       items={(data ?? []) as InventoryItem[]}
       initialQuery={q}
       initialLow={lowOnly}
+      banner={<BatteryStockCard />}
     />
   );
 }

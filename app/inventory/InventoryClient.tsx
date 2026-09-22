@@ -52,10 +52,12 @@ export default function InventoryClient({
   items,
   initialQuery = "",
   initialLow = false,
+  banner,
 }: {
   items: InventoryItem[];
   initialQuery?: string;
   initialLow?: boolean;
+  banner?: React.ReactNode;
 }) {
   const router = useRouter();
   const wantsAdd = useSearchParams().get("add") === "1";
@@ -174,6 +176,12 @@ export default function InventoryClient({
           </button>
         }
       />
+
+      {banner && (
+        <div className="anim-rise mt-4" style={delay(1)}>
+          {banner}
+        </div>
+      )}
 
       {items.length > 0 && (
         <div className="anim-rise mt-6 space-y-3" style={delay(1)}>
