@@ -134,6 +134,36 @@ const ICONS = {
       <path d="m3 8 9 5 9-5M12 13v8" />
     </>
   ),
+  receipt: (
+    <>
+      <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
+      <path d="M9 8h6M9 12h6M9 16h3" />
+    </>
+  ),
+  minus: <path d="M5 12h14" />,
+  printer: (
+    <>
+      <path d="M7 9V3h10v6" />
+      <rect x="3" y="9" width="18" height="8" rx="2" />
+      <path d="M7 14h10v7H7z" />
+    </>
+  ),
+  download: <path d="M12 3v12M7 10.5l5 5 5-5M4 20h16" />,
+  share: (
+    <>
+      <circle cx="18" cy="5.5" r="2.5" />
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="18.5" r="2.5" />
+      <path d="m8.2 10.8 7.6-4.1M8.2 13.2l7.6 4.1" />
+    </>
+  ),
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="m3.5 7 8.5 6 8.5-6" />
+    </>
+  ),
+  chart: <path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6" />,
   arrowup: <path d="M7 17 17 7M8 7h9v9" />,
 } satisfies Record<string, ReactNode>;
 

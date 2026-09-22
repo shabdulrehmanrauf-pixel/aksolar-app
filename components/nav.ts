@@ -6,18 +6,21 @@ export type NavItem = {
   icon: IconName;
   /** Home must match "/" exactly, otherwise it would look active on every page. */
   exact?: boolean;
+  /** Shown in the desktop sidebar only. On phones it lives under More (the bottom bar holds 5 tabs at most). */
+  desktopOnly?: boolean;
 };
 
 /*
   ADD NEW SECTIONS HERE. Only list screens that exist (no tabs that lead nowhere).
   Phone: these appear in the bottom bar (max 4, plus More = 5).
   Desktop: these appear in the sidebar.
-  Later: add { href: "/sales", label: "Sales", icon: ... } after Phase 3 (invoicing).
 */
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home", icon: "home", exact: true },
   { href: "/inventory", label: "Inventory", icon: "battery" },
   { href: "/customers", label: "Customers", icon: "users" },
+  { href: "/sales", label: "Sales", icon: "receipt" },
+  { href: "/reports", label: "Reports", icon: "chart", desktopOnly: true },
 ];
 
 export const MORE_ITEM: NavItem = { href: "/more", label: "More", icon: "more" };

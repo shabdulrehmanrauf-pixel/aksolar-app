@@ -41,7 +41,7 @@ export default function NavLinks({ variant }: { variant: "sidebar" | "bottom" })
     );
   }
 
-  const items = [...NAV_ITEMS, MORE_ITEM];
+  const items = [...NAV_ITEMS.filter((i) => !i.desktopOnly), MORE_ITEM];
   return (
     <nav
       aria-label="Main"

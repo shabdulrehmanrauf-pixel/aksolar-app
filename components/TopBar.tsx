@@ -23,7 +23,7 @@ export default function TopBar({ email }: { email: string }) {
           className="hidden h-11 w-full max-w-lg items-center gap-3 rounded-xl border border-line bg-white px-4 text-left text-lead shadow-sm transition-colors hover:border-lead/40 lg:flex"
         >
           <Icon name="search" className="h-5 w-5" />
-          <span className="flex-1">Search stock or customers</span>
+          <span className="flex-1">Search stock, customers or bills</span>
           <kbd className="rounded-md border border-line bg-plate px-1.5 py-0.5 text-xs font-medium text-lead">Ctrl K</kbd>
         </button>
 
@@ -32,15 +32,18 @@ export default function TopBar({ email }: { email: string }) {
           <Link href="/inventory?add=1" className="btn btn-quiet btn-sm hidden lg:inline-flex">
             <Icon name="plus" className="h-4 w-4" /> Item
           </Link>
-          <Link href="/customers?add=1" className="btn btn-primary btn-sm hidden lg:inline-flex">
+          <Link href="/customers?add=1" className="btn btn-quiet btn-sm hidden lg:inline-flex">
             <Icon name="plus" className="h-4 w-4" /> Customer
+          </Link>
+          <Link href="/sales/new" className="btn btn-primary btn-sm hidden lg:inline-flex">
+            <Icon name="receipt" className="h-4 w-4" /> New bill
           </Link>
 
           {/* Phone: search and account */}
           <button
             type="button"
             onClick={() => openCommand()}
-            aria-label="Search stock or customers"
+            aria-label="Search stock, customers or bills"
             className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-casing shadow-sm ring-1 ring-line/70 lg:hidden"
           >
             <Icon name="search" className="h-5 w-5" />

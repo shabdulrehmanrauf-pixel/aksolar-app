@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { customerMatches, formatPhone } from "@/lib/customers";
 import { categoryLabel, isLow, isOut } from "@/lib/inventory";
 import { formatRs } from "@/lib/format";
+import { formatDay, invoiceMatches } from "@/lib/invoices";
 import { getRecognition, VOICE_LOCALE, type RecognitionLike, type VoiceLang } from "@/lib/speech";
 import type { Category, Customer } from "@/lib/types";
 import Icon, { type IconName } from "./Icons";
@@ -20,11 +21,12 @@ type StockRow = {
   reorder_level: number;
   sale_price: number;
 };
+type BillRow = { id: string; invoice_number: string; buyer_name: string; invoice_date: string; total_value: number; due_total: number };
 type CustomerRow = Pick<Customer, "id" | "name" | "phone" | "cnic_or_ntn" | "address" | "registration_type">;
 
 type Hit = {
   key: string;
-  group: "Jump to" | "Stock" | "Customers";
+  group: "Jump to" | "Stock" | "Customers" | "Bills";
   title: string;
   sub: string;
   icon: IconName;
@@ -33,6 +35,9 @@ type Hit = {
 };
 
 const ACTIONS: Hit[] = [
+  { key: "a-bill", group: "Jump to", title: "New bill", sub: "Make a sale and take payment", icon: "receipt", href: "/sales/new" },
+  { key: "a-sales", group: "Jump to", title: "Sales", sub: "All bills and udhaar", icon: "banknote", href: "/sales" },
+  { key: "a-reports", group: "Jump to", title: "Reports", sub: "Sales, cash and best sellers", icon: "chart", href: "/reports" },
   { key: "a-home", group: "Jump to", title: "Home", sub: "Overview of your shop", icon: "home", href: "/" },
   { key: "a-stock", group: "Jump to", title: "Inventory", sub: "All batteries, panels and accessories", icon: "battery", href: "/inventory" },
   { key: "a-cust", group: "Jump to", title: "Customers", sub: "Customer list and details", icon: "users", href: "/customers" },
@@ -57,6 +62,7 @@ export default function CommandPalette({
   const [query, setQuery] = useState("");
   const [stock, setStock] = useState<StockRow[]>([]);
   const [people, setPeople] = useState<CustomerRow[]>([]);
+  const [bills, setBills] = useState<BillRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [active, setActive] = useState(0);
   const [voiceOk, setVoiceOk] = useState(false);
@@ -81,11 +87,17 @@ export default function CommandPalette({
         .select("id,name,phone,cnic_or_ntn,address,registration_type")
         .order("name")
         .limit(2000),
+      supabase
+        .from("invoice_balances")
+        .select("id,invoice_number,buyer_name,invoice_date,total_value,due_total")
+        .order("created_at", { ascending: false })
+        .limit(500),
     ])
-      .then(([inv, cust]) => {
+      .then(([inv, cust, bill]) => {
         if (cancelled) return;
         setStock((inv.data ?? []) as StockRow[]);
         setPeople((cust.data ?? []) as CustomerRow[]);
+        setBills((bill.data ?? []) as BillRow[]);
         setLoaded(true);
       })
       .catch(() => !cancelled && setLoaded(true));
@@ -198,9 +210,24 @@ export default function CommandPalette({
         })
       );
 
+    bills
+      .filter((b) => invoiceMatches({ ...b, buyer_phone: null, note: null }, q))
+      .slice(0, 5)
+      .forEach((b) =>
+        out.push({
+          key: `b-${b.id}`,
+          group: "Bills",
+          title: `${b.invoice_number} · ${b.buyer_name}`,
+          sub: `${formatDay(b.invoice_date)} · ${formatRs(b.total_value)}`,
+          icon: "receipt",
+          href: `/sales/${b.id}`,
+          tag: b.due_total > 0 ? { text: `${formatRs(b.due_total)} due`, tone: "bad" } : { text: "Paid", tone: "good" },
+        })
+      );
+
     ACTIONS.filter((a) => a.title.toLowerCase().includes(q)).forEach((a) => out.push(a));
     return out;
-  }, [query, stock, people]);
+  }, [query, stock, people, bills]);
 
   const go = useCallback(
     (hit: Hit) => {
@@ -243,7 +270,7 @@ export default function CommandPalette({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Search stock and customers"
+        aria-label="Search stock, customers and bills"
         onKeyDown={onKeyDown}
         className="anim-pop mx-auto flex h-dvh w-full flex-col overflow-hidden bg-white sm:mt-[9vh] sm:h-auto sm:max-h-[72vh] sm:max-w-xl sm:rounded-3xl sm:shadow-2xl"
       >
@@ -262,7 +289,7 @@ export default function CommandPalette({
             aria-controls="cmd-list"
             aria-activedescendant={hits[active] ? `cmd-opt-${active}` : undefined}
             aria-label="Search"
-            placeholder={listening ? "Listening" : "Type or speak: Osaka 200Ah, Ali Khan, 0300"}
+            placeholder={listening ? "Listening" : "Type or speak: Osaka 200Ah, Ali Khan, AK-000012"}
             autoComplete="off"
             spellCheck={false}
             className="min-w-0 flex-1 bg-transparent py-1.5 text-base outline-none placeholder:text-lead/70"
