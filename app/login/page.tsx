@@ -30,7 +30,7 @@ export default function LoginPage() {
         </div>
 
         <p className="max-w-xs font-display text-3xl font-semibold leading-[1.05] md:text-5xl">
-          Al Karam Battery and Solar
+          Al Karam Batteries & Solar
         </p>
       </section>
 
