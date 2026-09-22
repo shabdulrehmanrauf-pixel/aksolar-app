@@ -5,10 +5,12 @@ import Avatar from "@/components/Avatar";
 import HomeCommandBar from "@/components/HomeCommandBar";
 import Icon, { type IconName } from "@/components/Icons";
 import { formatPhone } from "@/lib/customers";
+import { formatDay, todayKarachi } from "@/lib/invoices";
 import { formatRs, formatRsCompact } from "@/lib/format";
 import { isLow, isOut, itemSpecs } from "@/lib/inventory";
 import { createClient } from "@/lib/supabase/server";
-import type { Customer, InventoryItem } from "@/lib/types";
+import type { Customer, Invoice, InventoryItem } from "@/lib/types";
+import PayBadge from "./sales/PayBadge";
 import StockGauge from "./inventory/StockGauge";
 
 export const metadata: Metadata = { title: "Home" };
@@ -17,11 +19,21 @@ export const metadata: Metadata = { title: "Home" };
 const delay = (i: number) => ({ "--i": i }) as React.CSSProperties;
 
 const QUICK_TILES: { href: string; label: string; icon: IconName; tone: string }[] = [
+  { href: "/sales/new", label: "New bill", icon: "receipt", tone: "from-yellow-400 to-amber-600 shadow-amber-600/35" },
+  { href: "/sales", label: "Sales", icon: "banknote", tone: "from-teal-500 to-cyan-700 shadow-teal-700/30" },
   { href: "/inventory", label: "Stock", icon: "battery", tone: "from-amber-400 to-orange-500 shadow-amber-500/35" },
   { href: "/customers", label: "Customers", icon: "users", tone: "from-sky-500 to-blue-700 shadow-blue-600/30" },
   { href: "/inventory?add=1", label: "Add item", icon: "plus", tone: "from-emerald-500 to-green-700 shadow-green-700/30" },
   { href: "/customers?add=1", label: "Add customer", icon: "userplus", tone: "from-violet-500 to-indigo-700 shadow-indigo-600/30" },
 ];
+
+type MoneySummary = {
+  sales_total: number;
+  sales_count: number;
+  cash_received: number;
+  udhaar_total: number;
+  udhaar_count: number;
+};
 
 function greeting() {
   const hour = Number(
@@ -41,7 +53,8 @@ function todayLabel() {
 
 export default async function HomePage() {
   const supabase = await createClient();
-  const [inventory, recent] = await Promise.all([
+  const today = todayKarachi();
+  const [inventory, recent, money, recentBills] = await Promise.all([
     supabase
       .from("inventory")
       .select("id,category,brand,model,type,voltage,plates,ah_rating,wattage,warranty_months,quantity,reorder_level,cost_price,sale_price"),
@@ -51,7 +64,47 @@ export default async function HomePage() {
       .select("id,name,phone,registration_type,created_at", { count: "exact" })
       .order("created_at", { ascending: false })
       .limit(5),
+    supabase.rpc("money_summary", { p_day: today }),
+    supabase
+      .from("invoice_balances")
+      .select("id,invoice_number,buyer_name,invoice_date,total_value,due_total,payment_status,status")
+      .order("created_at", { ascending: false })
+      .limit(5),
   ]);
+  const billsReady = !money.error && !recentBills.error;
+  const summary = (money.data ?? null) as MoneySummary | null;
+  const bills = (recentBills.data ?? []) as Pick<
+    Invoice,
+    "id" | "invoice_number" | "buyer_name" | "invoice_date" | "total_value" | "due_total" | "payment_status" | "status"
+  >[];
+  const moneyCards: { label: string; value: string; sub: string; href: string; icon: IconName; tone: string }[] = summary
+    ? [
+        {
+          label: "Sales today",
+          value: formatRsCompact(summary.sales_total),
+          sub: `${summary.sales_count} ${summary.sales_count === 1 ? "bill" : "bills"}`,
+          href: "/sales",
+          icon: "receipt",
+          tone: "bg-sun/25 text-amber-800",
+        },
+        {
+          label: "Cash received today",
+          value: formatRsCompact(summary.cash_received),
+          sub: "Cash, bank and other",
+          href: "/reports?range=today",
+          icon: "banknote",
+          tone: "bg-cell/10 text-cell",
+        },
+        {
+          label: "Udhaar to collect",
+          value: formatRsCompact(summary.udhaar_total),
+          sub: `${summary.udhaar_count} open ${summary.udhaar_count === 1 ? "bill" : "bills"}`,
+          href: "/sales?filter=due",
+          icon: "alert",
+          tone: summary.udhaar_total > 0 ? "bg-terminal/10 text-terminal" : "bg-cell/10 text-cell",
+        },
+      ]
+    : [];
 
   const items = (inventory.data ?? []) as InventoryItem[];
   const stockAtCost = items.reduce((sum, i) => sum + i.cost_price * i.quantity, 0);
@@ -112,8 +165,8 @@ export default async function HomePage() {
               </p>
             </div>
             <div className="hidden gap-2 sm:flex lg:hidden">
-              <Link href="/inventory?add=1" className="btn btn-primary">
-                <Icon name="plus" className="h-5 w-5" /> Add item
+              <Link href="/sales/new" className="btn btn-primary">
+                <Icon name="receipt" className="h-5 w-5" /> New bill
               </Link>
               <Link
                 href="/customers?add=1"
@@ -143,9 +196,34 @@ export default async function HomePage() {
           </div>
         </section>
 
+        {/* Money today */}
+        <section aria-label="Money today" className="anim-rise mt-4" style={delay(1)}>
+          {billsReady ? (
+            <div className="grid gap-3 sm:grid-cols-3">
+              {moneyCards.map((m) => (
+                <Link key={m.label} href={m.href} className="card card-hover flex items-center gap-3.5 p-4">
+                  <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${m.tone}`}>
+                    <Icon name={m.icon} className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm text-lead">{m.label}</span>
+                    <span className="block whitespace-nowrap font-display text-3xl font-semibold leading-none tabular-nums">{m.value}</span>
+                    <span className="mt-1 block text-sm text-lead">{m.sub}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="card p-4 text-lead">
+              Sales numbers are not set up yet. In Supabase, open SQL Editor and run{" "}
+              <code className="rounded bg-plate px-1.5 py-0.5 text-casing">03_invoices.sql</code>.
+            </div>
+          )}
+        </section>
+
         {/* Low-stock strip */}
         {items.length > 0 && (
-          <div className="anim-rise mt-4" style={delay(1)}>
+          <div className="anim-rise mt-4" style={delay(2)}>
             {lowItems.length > 0 ? (
               <Link
                 href="/inventory?filter=low"
@@ -175,7 +253,7 @@ export default async function HomePage() {
           {/* Quick actions */}
           <section
             aria-label="Quick actions"
-            className="anim-rise grid grid-cols-4 gap-2.5 lg:col-start-2 lg:row-start-1 lg:grid-cols-2 lg:gap-3"
+            className="anim-rise grid grid-cols-3 gap-2.5 lg:col-start-2 lg:row-start-1 lg:grid-cols-2 lg:gap-3"
             style={delay(2)}
           >
             {QUICK_TILES.map((t) => (
@@ -316,6 +394,54 @@ export default async function HomePage() {
             )}
           </section>
         </div>
+
+        {/* Recent bills */}
+        {billsReady && (
+          <section className="card anim-rise mt-5 overflow-hidden" style={delay(5)}>
+            <div className="flex items-center justify-between px-5 pb-2 pt-5">
+              <h2 className="font-display text-2xl font-semibold">Recent bills</h2>
+              {bills.length > 0 && (
+                <Link href="/sales" className="text-sm font-semibold text-focus hover:underline">
+                  See all
+                </Link>
+              )}
+            </div>
+            {bills.length === 0 ? (
+              <div className="px-5 pb-8 pt-3 text-center">
+                <p className="font-display text-xl font-semibold">No bills yet</p>
+                <p className="mx-auto mt-1 max-w-xs text-lead">Your latest bills will show here.</p>
+                <Link href="/sales/new" className="btn btn-primary mt-4">
+                  Make first bill
+                </Link>
+              </div>
+            ) : (
+              <ul className="px-2 pb-3">
+                {bills.map((b) => (
+                  <li key={b.id}>
+                    <Link href={`/sales/${b.id}`} className="group flex items-center gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-plate/70">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-semibold">{b.buyer_name}</span>
+                        <span className="block truncate text-sm text-lead">
+                          {b.invoice_number} · {formatDay(b.invoice_date)}
+                        </span>
+                      </span>
+                      <span className="hidden sm:block">
+                        <PayBadge status={b.payment_status} bill={b.status} />
+                      </span>
+                      <span className="text-right">
+                        <span className="block font-semibold tabular-nums">{formatRs(b.total_value)}</span>
+                        {b.status !== "Cancelled" && b.due_total > 0 && (
+                          <span className="block text-sm font-semibold tabular-nums text-terminal-deep">{formatRs(b.due_total)} due</span>
+                        )}
+                      </span>
+                      <Icon name="chevron" className="h-4 w-4 text-lead/60 transition-transform group-hover:translate-x-0.5" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
       </div>
 
       <HomeCommandBar />
