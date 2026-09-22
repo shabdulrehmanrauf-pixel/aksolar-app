@@ -43,6 +43,7 @@ const ACTIONS: Hit[] = [
   { key: "a-cust", group: "Jump to", title: "Customers", sub: "Customer list and details", icon: "users", href: "/customers" },
   { key: "a-add-item", group: "Jump to", title: "Add item", sub: "Add a new item to stock", icon: "plus", href: "/inventory?add=1" },
   { key: "a-add-cust", group: "Jump to", title: "Add customer", sub: "Save a new customer", icon: "userplus", href: "/customers?add=1" },
+  { key: "a-battery", group: "Jump to", title: "Battery services", sub: "Charging slips and warranty claims", icon: "plug", href: "/battery-services" },
 ];
 
 const TAG_STYLE = {
