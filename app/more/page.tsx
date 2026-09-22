@@ -8,8 +8,11 @@ import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "More" };
 
-// Only shortcuts to screens that exist. Udhaar khata, Reports, Import/Export and Settings will be added with their phases.
+// Only shortcuts to screens that exist. Import/Export and Settings will be added with their phases.
 const SHORTCUTS: { href: string; label: string; hint: string; icon: IconName; tone: string }[] = [
+  { href: "/sales/new", label: "New bill", hint: "Make a sale and take payment", icon: "receipt", tone: "bg-sun/25 text-amber-800" },
+  { href: "/sales?filter=due", label: "Udhaar to collect", hint: "Bills that are not fully paid", icon: "banknote", tone: "bg-terminal/10 text-terminal" },
+  { href: "/reports", label: "Reports", hint: "Sales, cash closing and best sellers", icon: "chart", tone: "bg-focus/10 text-focus" },
   { href: "/inventory?add=1", label: "Add item", hint: "Add a battery, panel or accessory", icon: "plus", tone: "bg-cell/10 text-cell" },
   { href: "/customers?add=1", label: "Add customer", hint: "Save a new customer", icon: "userplus", tone: "bg-focus/10 text-focus" },
   { href: "/inventory?filter=low", label: "Low stock", hint: "Items that need reordering", icon: "alert", tone: "bg-terminal/10 text-terminal" },
