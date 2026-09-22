@@ -16,6 +16,7 @@ const SHORTCUTS: { href: string; label: string; hint: string; icon: IconName; to
   { href: "/inventory?add=1", label: "Add item", hint: "Add a battery, panel or accessory", icon: "plus", tone: "bg-cell/10 text-cell" },
   { href: "/customers?add=1", label: "Add customer", hint: "Save a new customer", icon: "userplus", tone: "bg-focus/10 text-focus" },
   { href: "/inventory?filter=low", label: "Low stock", hint: "Items that need reordering", icon: "alert", tone: "bg-terminal/10 text-terminal" },
+  { href: "/battery-services", label: "Battery services", hint: "Charging slips and battery warranty claims", icon: "plug", tone: "bg-focus/10 text-focus" },
 ];
 
 export default async function MorePage() {
