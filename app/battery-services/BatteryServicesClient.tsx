@@ -100,6 +100,23 @@ export default function BatteryServicesClient({
 
   const distributorName = (id: string | null) => distributors.find((d) => d.id === id)?.name ?? null;
 
+  // "Battery stock" summary: claimed batteries we're still physically holding
+  // (with us, or away at a distributor), grouped by who is holding each one,
+  // plus how many customer batteries are in the shop right now for charging.
+  const claimStock = useMemo(() => {
+    const byHolder = new Map<string, number>();
+    let total = 0;
+    for (const c of claims) {
+      if (!claimHoldsBattery(c.status)) continue;
+      const holder = c.status === "received" ? "With us" : distributorName(c.distributor_id) ?? "With distributor (not set)";
+      byHolder.set(holder, (byHolder.get(holder) ?? 0) + 1);
+      total += 1;
+    }
+    return { total, byHolder: Array.from(byHolder.entries()).sort((a, b) => b[1] - a[1]) };
+  }, [claims, distributors]);
+
+  const chargingInShop = useMemo(() => jobs.filter((j) => j.status === "in_shop").length, [jobs]);
+
   function onJobCreated(id: string) {
     setJobFormOpen(false);
     router.push(`/print/charging/${id}?auto=1`);
@@ -155,7 +172,33 @@ export default function BatteryServicesClient({
         </p>
       )}
 
-      <div className="anim-rise mt-6 space-y-3" style={delay(1)}>
+      <div className="anim-rise mt-6 grid gap-3 sm:grid-cols-2" style={delay(1)}>
+        <div className="card p-4">
+          <p className="text-sm text-lead">In shop for charging</p>
+          <p className="mt-1 font-display text-3xl font-semibold tabular-nums">{chargingInShop}</p>
+          <p className="mt-1 text-sm text-lead">
+            {chargingInShop === 0 ? "No customer batteries in right now." : "Customer batteries currently being charged."}
+          </p>
+        </div>
+        <div className="card p-4">
+          <p className="text-sm text-lead">Claimed batteries in stock</p>
+          <p className="mt-1 font-display text-3xl font-semibold tabular-nums">{claimStock.total}</p>
+          {claimStock.byHolder.length === 0 ? (
+            <p className="mt-1 text-sm text-lead">None held right now.</p>
+          ) : (
+            <ul className="mt-2 space-y-1">
+              {claimStock.byHolder.map(([holder, n]) => (
+                <li key={holder} className="flex items-center justify-between text-sm">
+                  <span className="text-lead">{holder}</span>
+                  <span className="font-semibold tabular-nums">{n}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      <div className="anim-rise mt-4 space-y-3" style={delay(2)}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div role="tablist" aria-label="Battery services" className="inline-flex rounded-2xl bg-plate p-1.5">
             <button
@@ -200,7 +243,7 @@ export default function BatteryServicesClient({
       </div>
 
       {actionError && (
-        <p role="alert" className="anim-rise mt-4 rounded-xl bg-terminal/10 px-4 py-3 text-sm text-terminal-deep" style={delay(2)}>
+        <p role="alert" className="anim-rise mt-4 rounded-xl bg-terminal/10 px-4 py-3 text-sm text-terminal-deep" style={delay(3)}>
           {actionError}
         </p>
       )}
