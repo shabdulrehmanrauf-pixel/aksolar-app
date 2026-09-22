@@ -112,6 +112,10 @@ export type ChargingPriceListItem = {
 
 export type ChargingJobStatus = "in_shop" | "collected" | "unclaimed";
 
+/** Whether the battery came back working, or turned out to be faulty, once
+ * charged. Only set once the job is handed back (status "collected"). */
+export type ChargingOutcome = "charged" | "faulty";
+
 /** A customer's own battery, dropped off to be charged. */
 export type ChargingJob = {
   id: string;
@@ -129,6 +133,11 @@ export type ChargingJob = {
   status: ChargingJobStatus;
   collected_at: string | null;
   created_at: string;
+  // Set by record_charging_handover (07_charging_handover.sql) when the
+  // battery is handed back to the customer.
+  outcome: ChargingOutcome | null;
+  handover_amount: number | null;
+  handover_note: string | null;
 };
 
 export type BatteryClaimStatus =
