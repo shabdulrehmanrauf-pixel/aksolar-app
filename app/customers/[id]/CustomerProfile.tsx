@@ -8,11 +8,18 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import Icon, { type IconName } from "@/components/Icons";
 import Toast from "@/components/Toast";
 import { formatPhone, formatRegNo, regNoKind, whatsappLink } from "@/lib/customers";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatRs } from "@/lib/format";
+import { formatDay, friendlyDeleteError } from "@/lib/invoices";
 import { getBrowserClient } from "@/lib/supabase/lazy";
-import type { Customer } from "@/lib/types";
+import type { Customer, Invoice } from "@/lib/types";
+import PayBadge from "@/app/sales/PayBadge";
 import CustomerForm, { type CustomerLite } from "../CustomerForm";
 import RegistrationBadge from "../RegistrationBadge";
+
+export type CustomerBill = Pick<
+  Invoice,
+  "id" | "invoice_number" | "invoice_date" | "total_value" | "paid_total" | "due_total" | "payment_status" | "status"
+>;
 
 const delay = (i: number) => ({ "--i": i }) as React.CSSProperties;
 
@@ -45,9 +52,13 @@ function InfoCard({
 export default function CustomerProfile({
   customer,
   others,
+  bills,
+  billsReady,
 }: {
   customer: Customer;
   others: CustomerLite[];
+  bills: CustomerBill[];
+  billsReady: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -70,7 +81,7 @@ export default function CustomerProfile({
     const { error } = await (await getBrowserClient()).from("customers").delete().eq("id", customer.id);
     if (error) {
       setBusy(false);
-      setError(`Could not delete. ${error.message}`);
+      setError(friendlyDeleteError(error, "customer"));
       return;
     }
     router.replace("/customers");
@@ -78,6 +89,10 @@ export default function CustomerProfile({
   }
 
   const kind = customer.cnic_or_ntn ? regNoKind(customer.cnic_or_ntn) : null;
+  const validBills = bills.filter((b) => b.status !== "Cancelled");
+  const billed = validBills.reduce((sum, b) => sum + b.total_value, 0);
+  const paid = validBills.reduce((sum, b) => sum + b.paid_total, 0);
+  const owed = validBills.reduce((sum, b) => sum + b.due_total, 0);
 
   return (
     <div>
@@ -98,9 +113,12 @@ export default function CustomerProfile({
         </div>
 
         <div className="relative mt-5 flex flex-wrap gap-2.5">
+          <Link href={`/sales/new?customer=${customer.id}`} className="on-dark btn btn-primary">
+            <Icon name="receipt" className="h-5 w-5" /> New bill
+          </Link>
           {customer.phone && (
             <>
-              <a href={`tel:${customer.phone}`} className="on-dark btn btn-primary">
+              <a href={`tel:${customer.phone}`} className="on-dark btn border border-white/20 bg-white/10 text-white hover:bg-white/20">
                 <Icon name="phone" className="h-5 w-5" /> Call
               </a>
               <a
@@ -165,15 +183,75 @@ export default function CustomerProfile({
         />
       </dl>
 
-      {/* Bills arrive in the next phase (invoicing). No made-up numbers here. */}
-      <section className="card anim-rise mt-4 border-dashed border-lead/40 px-6 py-10 text-center" style={delay(3)}>
-        <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-sun/25 text-amber-800">
-          <Icon name="tag" className="h-7 w-7" />
-        </span>
-        <h2 className="mt-3 font-display text-2xl font-semibold">No bills yet</h2>
-        <p className="mx-auto mt-1 max-w-md text-lead">
-          Bills made for {customer.name} will appear here, with what they bought, what they paid and what is still due.
-        </p>
+      {/* Bills */}
+      <section className="card anim-rise mt-4 overflow-hidden" style={delay(3)}>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-2 pt-5">
+          <h2 className="font-display text-2xl font-semibold">Bills</h2>
+          {billsReady && bills.length > 0 && (
+            <Link href={`/sales/new?customer=${customer.id}`} className="btn btn-quiet btn-sm">
+              <Icon name="plus" className="h-4 w-4" /> New bill
+            </Link>
+          )}
+        </div>
+
+        {!billsReady ? (
+          <p className="px-5 pb-6 text-lead">
+            Bills could not be loaded. In Supabase, open SQL Editor and run{" "}
+            <code className="rounded bg-plate px-1.5 py-0.5 text-casing">03_invoices.sql</code>.
+          </p>
+        ) : bills.length === 0 ? (
+          <div className="px-6 pb-10 pt-4 text-center">
+            <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-sun/25 text-amber-800">
+              <Icon name="tag" className="h-7 w-7" />
+            </span>
+            <h3 className="mt-3 font-display text-2xl font-semibold">No bills yet</h3>
+            <p className="mx-auto mt-1 max-w-md text-lead">
+              Bills made for {customer.name} will appear here, with what they paid and what is still due.
+            </p>
+            <Link href={`/sales/new?customer=${customer.id}`} className="btn btn-primary mt-4">
+              Make first bill
+            </Link>
+          </div>
+        ) : (
+          <>
+            <dl className="grid grid-cols-3 gap-2 px-5 pb-3 pt-1">
+              <div className="rounded-xl bg-plate/70 p-3">
+                <dt className="text-xs text-lead sm:text-sm">Billed</dt>
+                <dd className="font-display text-xl font-semibold tabular-nums sm:text-2xl">{formatRs(billed)}</dd>
+              </div>
+              <div className="rounded-xl bg-plate/70 p-3">
+                <dt className="text-xs text-lead sm:text-sm">Paid</dt>
+                <dd className="font-display text-xl font-semibold tabular-nums text-cell-deep sm:text-2xl">{formatRs(paid)}</dd>
+              </div>
+              <div className={`rounded-xl p-3 ${owed > 0 ? "bg-terminal/10" : "bg-plate/70"}`}>
+                <dt className="text-xs text-lead sm:text-sm">Balance due</dt>
+                <dd className={`font-display text-xl font-semibold tabular-nums sm:text-2xl ${owed > 0 ? "text-terminal-deep" : ""}`}>
+                  {formatRs(owed)}
+                </dd>
+              </div>
+            </dl>
+            <ul className="divide-y divide-line/60 px-2 pb-3">
+              {bills.map((b) => (
+                <li key={b.id}>
+                  <Link href={`/sales/${b.id}`} className="group flex items-center gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-plate/70">
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold">{b.invoice_number}</span>
+                      <span className="block text-sm text-lead">{formatDay(b.invoice_date)}</span>
+                    </span>
+                    <PayBadge status={b.payment_status} bill={b.status} />
+                    <span className="text-right">
+                      <span className="block font-semibold tabular-nums">{formatRs(b.total_value)}</span>
+                      {b.status !== "Cancelled" && b.due_total > 0 && (
+                        <span className="block text-sm font-semibold tabular-nums text-terminal-deep">{formatRs(b.due_total)} due</span>
+                      )}
+                    </span>
+                    <Icon name="chevron" className="h-4 w-4 text-lead/60 transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </section>
 
       {editing && <CustomerForm customer={customer} others={others} onClose={closeForm} onSaved={(m) => {
@@ -185,7 +263,7 @@ export default function CustomerProfile({
       {deleting && (
         <ConfirmDialog
           title={`Delete ${customer.name}?`}
-          body="This removes the customer from your list. It cannot be undone."
+          body="This removes the customer from your list. It cannot be undone. A customer who has bills cannot be deleted."
           confirmLabel="Delete customer"
           cancelLabel="Keep customer"
           busy={busy}
