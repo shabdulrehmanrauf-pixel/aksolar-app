@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import Icon from "@/components/Icons";
 import PageHeader from "@/components/PageHeader";
-import { customerMatches, formatPhone, formatRegNo } from "@/lib/customers";
+import {
+  cleanRegNo,
+  customerMatches,
+  formatPhone,
+  formatRegNo,
+  isValidPhone,
+  normalizePhone,
+  REGISTRATION_TYPES,
+} from "@/lib/customers";
 import { formatRs } from "@/lib/format";
 import { categoryLabel, itemSpecs } from "@/lib/inventory";
 import {
@@ -18,8 +26,9 @@ import {
   todayKarachi,
 } from "@/lib/invoices";
 import { getBrowserClient } from "@/lib/supabase/lazy";
-import type { Customer, InventoryItem, PaymentMethod } from "@/lib/types";
+import type { Customer, InventoryItem, PaymentMethod, RegistrationType } from "@/lib/types";
 import CustomerForm from "@/app/customers/CustomerForm";
+import ManualItemForm from "./ManualItemForm";
 
 export type BillItem = Pick<
   InventoryItem,
@@ -71,10 +80,28 @@ export default function NewBill({
   const [addingCustomer, setAddingCustomer] = useState(false);
   const [note, setNote] = useState("");
 
+  // Walk-in bills can carry their own phone/address/tax details directly on the invoice,
+  // without needing a saved customer record.
+  const [walkinDetailsOpen, setWalkinDetailsOpen] = useState(false);
+  const [walkinPhone, setWalkinPhone] = useState("");
+  const [walkinAddress, setWalkinAddress] = useState("");
+  const [walkinRegType, setWalkinRegType] = useState<RegistrationType>("Unregistered");
+  const [walkinCnic, setWalkinCnic] = useState("");
+
+  // The bill date defaults to today (Pakistan time) but can be set to any earlier date.
+  const [invoiceDate, setInvoiceDate] = useState(() => todayKarachi());
+  const today = useMemo(() => todayKarachi(), []);
+
   const [lines, setLines] = useState<Line[]>([]);
   const [itemQuery, setItemQuery] = useState("");
   const [activeHit, setActiveHit] = useState(0);
   const itemInputRef = useRef<HTMLInputElement>(null);
+
+  // Items typed in by hand (not found in stock search) get added to inventory automatically
+  // and tracked here so their bill line can be flagged as new.
+  const [extraStock, setExtraStock] = useState<BillItem[]>([]);
+  const [newItemIds, setNewItemIds] = useState<Set<string>>(new Set());
+  const [addingItem, setAddingItem] = useState(false);
 
   const [mode, setMode] = useState<PayMode>("full");
   const [partText, setPartText] = useState("");
@@ -86,19 +113,21 @@ export default function NewBill({
   const [toast, setToast] = useState<string | null>(null);
 
   const customer = customers.find((c) => c.id === customerId) ?? null;
-  const byId = useMemo(() => new Map(stock.map((s) => [s.id, s])), [stock]);
+  // Items added by hand this session join the searchable stock list straight away.
+  const allStock = useMemo(() => [...stock, ...extraStock], [stock, extraStock]);
+  const byId = useMemo(() => new Map(allStock.map((s) => [s.id, s])), [allStock]);
 
   /* ---------- Item search ---------- */
   const hits = useMemo(() => {
     const words = itemQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (words.length === 0) return [];
-    return stock
+    return allStock
       .filter((s) => {
         const hay = `${s.brand} ${s.model} ${s.type ?? ""} ${categoryLabel(s.category)} ${s.ah_rating ?? ""}ah ${s.wattage ?? ""}w`.toLowerCase();
         return words.every((w) => hay.includes(w));
       })
       .slice(0, 8);
-  }, [itemQuery, stock]);
+  }, [itemQuery, allStock]);
 
   const addItem = useCallback(
     (item: BillItem) => {
@@ -117,6 +146,18 @@ export default function NewBill({
       itemInputRef.current?.focus();
     },
     []
+  );
+
+  /** Called when a hand-typed item has just been saved to inventory. Adds it to the bill and flags the line. */
+  const handleManualItemAdded = useCallback(
+    (item: BillItem) => {
+      setExtraStock((prev) => [...prev, item]);
+      setNewItemIds((prev) => new Set(prev).add(item.id));
+      addItem(item);
+      setAddingItem(false);
+      setToast("Added to inventory and to this bill.");
+    },
+    [addItem]
   );
 
   const setLine = (itemId: string, patch: Partial<Line>) =>
@@ -166,6 +207,21 @@ export default function NewBill({
       if (partValue >= total) return "That is the full amount. Choose Paid in full, or enter a smaller amount.";
     }
     if (due > 0 && !customer) return "Udhaar needs a customer. Choose a customer, or take the full payment.";
+    if (!invoiceDate) return "Choose the bill date.";
+    if (invoiceDate > today) return "The bill date cannot be in the future.";
+    if (!customer) {
+      const phone = normalizePhone(walkinPhone);
+      if (phone && !isValidPhone(phone)) {
+        return "Enter a valid phone number for the customer, or leave it empty.";
+      }
+      const reg = cleanRegNo(walkinCnic);
+      if (walkinRegType === "Registered" && !reg) {
+        return "A registered customer needs a CNIC (13 digits) or an NTN (7 digits).";
+      }
+      if (reg && !/^\d{7}$|^\d{13}$/.test(reg)) {
+        return "Use 13 digits for a CNIC or 7 digits for an NTN. Dashes are fine, other characters are not.";
+      }
+    }
     return null;
   }
 
@@ -185,10 +241,14 @@ export default function NewBill({
         p_customer_id: customerId,
         p_walkin_name: customerId ? null : walkinName.trim() || null,
         p_note: note.trim() || null,
-        p_invoice_date: todayKarachi(),
+        p_invoice_date: invoiceDate,
         p_items: computed.map((c) => ({ inventory_id: c.item.id, quantity: c.qty, rate: c.rate })),
         p_paid: paidNow,
         p_method: method,
+        p_walkin_phone: customerId ? null : normalizePhone(walkinPhone) || null,
+        p_walkin_address: customerId ? null : walkinAddress.trim() || null,
+        p_walkin_registration_type: customerId ? null : walkinRegType,
+        p_walkin_cnic_or_ntn: customerId ? null : cleanRegNo(walkinCnic) || null,
       });
       if (dbError || !data) {
         setError(dbError ? friendlyInvoiceError(dbError) : "The bill was not saved. Please try again.");
@@ -253,8 +313,24 @@ export default function NewBill({
         <div className="space-y-4">
           {/* ---------- Customer ---------- */}
           <section className="card anim-rise p-4 sm:p-5" style={{ "--i": 1 } as React.CSSProperties}>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-display text-2xl font-semibold">Customer</h2>
+              <div className="flex items-center gap-2">
+                <label htmlFor="invoice-date" className="text-sm font-medium text-lead">
+                  Bill date
+                </label>
+                <input
+                  id="invoice-date"
+                  type="date"
+                  value={invoiceDate}
+                  max={today}
+                  onChange={(e) => {
+                    setInvoiceDate(e.target.value);
+                    setError(null);
+                  }}
+                  className="input h-10 w-[9.5rem] tabular-nums"
+                />
+              </div>
               {!pickingCustomer && (
                 <button type="button" className="btn btn-quiet btn-sm" onClick={() => setPickingCustomer(true)}>
                   {customer ? "Change" : "Choose customer"}
@@ -291,6 +367,107 @@ export default function NewBill({
                       className="input mt-1.5"
                       autoComplete="off"
                     />
+
+                    {!walkinDetailsOpen ? (
+                      <button
+                        type="button"
+                        className="btn btn-quiet btn-sm mt-2.5"
+                        onClick={() => setWalkinDetailsOpen(true)}
+                      >
+                        <Icon name="userplus" className="h-4 w-4" /> Add phone, address or CNIC/NTN
+                      </button>
+                    ) : (
+                      <div className="mt-3 space-y-3 rounded-xl border border-line p-3.5">
+                        <p className="text-xs text-lead">
+                          These go straight on this bill. They are not saved as a customer record.
+                        </p>
+                        <div>
+                          <label htmlFor="walkin-phone" className="mb-1 block text-sm font-medium text-lead">
+                            Phone (optional)
+                          </label>
+                          <input
+                            id="walkin-phone"
+                            type="tel"
+                            inputMode="tel"
+                            value={walkinPhone}
+                            onChange={(e) => {
+                              setWalkinPhone(e.target.value);
+                              setError(null);
+                            }}
+                            placeholder="0300 1234567"
+                            className="input"
+                            autoComplete="off"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="walkin-address" className="mb-1 block text-sm font-medium text-lead">
+                            Address (optional)
+                          </label>
+                          <textarea
+                            id="walkin-address"
+                            rows={2}
+                            value={walkinAddress}
+                            onChange={(e) => setWalkinAddress(e.target.value)}
+                            placeholder="Shop or house number, area, city"
+                            className="input resize-none"
+                            autoComplete="off"
+                          />
+                        </div>
+                        <div role="radiogroup" aria-label="Registration type" className="grid grid-cols-2 gap-2 rounded-2xl bg-plate p-1.5">
+                          {REGISTRATION_TYPES.map((r) => {
+                            const on = walkinRegType === r.value;
+                            return (
+                              <button
+                                key={r.value}
+                                type="button"
+                                role="radio"
+                                aria-checked={on}
+                                onClick={() => {
+                                  setWalkinRegType(r.value);
+                                  setError(null);
+                                }}
+                                className={`min-h-10 rounded-xl px-3 text-sm font-semibold transition-all ${
+                                  on ? "bg-white text-casing shadow-card" : "text-lead hover:text-casing"
+                                }`}
+                              >
+                                {r.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div>
+                          <label htmlFor="walkin-cnic" className="mb-1 block text-sm font-medium text-lead">
+                            CNIC or NTN {walkinRegType === "Registered" ? "" : "(optional)"}
+                          </label>
+                          <input
+                            id="walkin-cnic"
+                            type="text"
+                            inputMode="numeric"
+                            value={walkinCnic}
+                            onChange={(e) => {
+                              setWalkinCnic(e.target.value);
+                              setError(null);
+                            }}
+                            placeholder="42101-1234567-1 or 1234567"
+                            className="input tabular-nums"
+                            autoComplete="off"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-quiet btn-sm"
+                          onClick={() => {
+                            setWalkinDetailsOpen(false);
+                            setWalkinPhone("");
+                            setWalkinAddress("");
+                            setWalkinRegType("Unregistered");
+                            setWalkinCnic("");
+                          }}
+                        >
+                          Remove these details
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -384,7 +561,12 @@ export default function NewBill({
 
           {/* ---------- Items ---------- */}
           <section className="card anim-rise p-4 sm:p-5" style={{ "--i": 2 } as React.CSSProperties}>
-            <h2 className="font-display text-2xl font-semibold">Items</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-display text-2xl font-semibold">Items</h2>
+              <button type="button" className="btn btn-quiet btn-sm" onClick={() => setAddingItem(true)}>
+                <Icon name="plus" className="h-4 w-4" /> Item not in stock
+              </button>
+            </div>
 
             <div className="relative mt-3">
               <label htmlFor="item-search" className="sr-only">
@@ -447,7 +629,9 @@ export default function NewBill({
                 </span>
                 <p className="mt-2 font-semibold">No items yet</p>
                 <p className="mt-0.5 text-sm text-lead">
-                  {stock.length === 0 ? "Add stock in Inventory first." : "Search above and press Enter or tap an item to add it."}
+                  {allStock.length === 0
+                    ? "Add stock in Inventory, or use \"Item not in stock\" above."
+                    : "Search above and press Enter or tap an item to add it."}
                 </p>
               </div>
             ) : (
@@ -461,6 +645,11 @@ export default function NewBill({
                             {c.item.brand} {c.item.model}
                           </p>
                           <p className="text-sm text-lead">{specText(c.item)}</p>
+                          {newItemIds.has(c.line.itemId) && (
+                            <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-cell/10 px-2 py-0.5 text-xs font-semibold text-cell-deep">
+                              <Icon name="check" className="h-3 w-3" strokeWidth={2.4} /> New item, added to inventory
+                            </p>
+                          )}
                           {c.overStock && (
                             <p role="alert" className="mt-1 text-sm font-semibold text-terminal-deep">
                               Only {c.item.quantity} in stock. Lower the quantity to save.
@@ -683,6 +872,8 @@ export default function NewBill({
           }}
         />
       )}
+
+      {addingItem && <ManualItemForm onClose={() => setAddingItem(false)} onAdded={handleManualItemAdded} />}
 
       {toast && (
         <p role="status" className="anim-pop fixed inset-x-4 bottom-40 z-[60] mx-auto w-fit max-w-sm rounded-full bg-casing px-4 py-2.5 text-center text-[15px] font-medium text-white shadow-lift lg:bottom-8">
