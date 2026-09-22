@@ -24,6 +24,7 @@ import { BATTERY_CLAIM_STATUSES, claimHoldsBattery, claimStatusLabel } from "@/l
 import ChargingJobForm from "./ChargingJobForm";
 import BatteryClaimForm from "./BatteryClaimForm";
 import ClaimStatusForm from "./ClaimStatusForm";
+import ChargingHandoverForm from "./ChargingHandoverForm";
 
 type Tab = "charging" | "claims";
 
@@ -61,16 +62,21 @@ export default function BatteryServicesClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // Lets the Home screen's "Claim" and "Charging" buttons land directly on the
-  // right tab, via /battery-services?tab=claims (or tab=charging). It only
-  // switches the tab — it never opens the new-slip form by itself; the user
-  // still has to tap "New claim" / "New charging slip" for that.
-  const initialTab: Tab = searchParams.get("tab") === "claims" ? "claims" : "charging";
+  // Lets the Home screen's "Claim" and "Charging" buttons land directly on a
+  // focused, single-purpose screen via /battery-services?tab=claims (or
+  // tab=charging) -- just that one tab's summary, list and "New ..." button,
+  // with no tab switcher and no clicking the other kind's card. Arriving
+  // with no tab param at all (Sidebar / More / the Inventory card) keeps the
+  // full combined view with both tabs, as before.
+  const requestedTab = searchParams.get("tab");
+  const soloMode = requestedTab === "claims" || requestedTab === "charging";
+  const initialTab: Tab = requestedTab === "claims" ? "claims" : "charging";
   const [tab, setTab] = useState<Tab>(initialTab);
   const [query, setQuery] = useState("");
   const [jobFormOpen, setJobFormOpen] = useState(false);
   const [claimFormOpen, setClaimFormOpen] = useState(false);
   const [statusTarget, setStatusTarget] = useState<BatteryClaim | null>(null);
+  const [handoverTarget, setHandoverTarget] = useState<ChargingJob | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -148,20 +154,44 @@ export default function BatteryServicesClient({
     router.refresh();
   }
 
+  function onHandoverSaved(message: string) {
+    setHandoverTarget(null);
+    setToast(message);
+    router.refresh();
+  }
+
   return (
     <div>
       <PageHeader
-        title="Battery services"
-        subtitle="Charging slips and warranty claims. Shop-only slips — never sent to FBR."
+        title={soloMode ? (tab === "claims" ? "Battery claims" : "Charging jobs") : "Battery services"}
+        subtitle={
+          soloMode
+            ? tab === "claims"
+              ? "Batteries sent back to distributors under warranty."
+              : "Customer batteries in for charging."
+            : "Charging slips and warranty claims. Shop-only slips — never sent to FBR."
+        }
         action={
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setClaimFormOpen(true)} className="btn btn-quiet">
-              <Icon name="shield" className="h-5 w-5" /> New claim
-            </button>
-            <button type="button" onClick={() => setJobFormOpen(true)} className="btn btn-primary">
-              <Icon name="plug" className="h-5 w-5" /> New charging slip
-            </button>
-          </div>
+          soloMode ? (
+            tab === "claims" ? (
+              <button type="button" onClick={() => setClaimFormOpen(true)} className="btn btn-primary">
+                <Icon name="shield" className="h-5 w-5" /> New claim
+              </button>
+            ) : (
+              <button type="button" onClick={() => setJobFormOpen(true)} className="btn btn-primary">
+                <Icon name="plug" className="h-5 w-5" /> New charging slip
+              </button>
+            )
+          ) : (
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setClaimFormOpen(true)} className="btn btn-quiet">
+                <Icon name="shield" className="h-5 w-5" /> New claim
+              </button>
+              <button type="button" onClick={() => setJobFormOpen(true)} className="btn btn-primary">
+                <Icon name="plug" className="h-5 w-5" /> New charging slip
+              </button>
+            </div>
+          )
         }
       />
 
@@ -173,58 +203,67 @@ export default function BatteryServicesClient({
         </p>
       )}
 
-      <div className="anim-rise mt-6 grid gap-3 sm:grid-cols-2" style={delay(1)}>
-        <div className="card p-4">
-          <p className="text-sm text-lead">In shop for charging</p>
-          <p className="mt-1 font-display text-3xl font-semibold tabular-nums">{chargingInShop}</p>
-          <p className="mt-1 text-sm text-lead">
-            {chargingInShop === 0 ? "No customer batteries in right now." : "Customer batteries currently being charged."}
-          </p>
-        </div>
-        <div className="card p-4">
-          <p className="text-sm text-lead">Claimed batteries in stock</p>
-          <p className="mt-1 font-display text-3xl font-semibold tabular-nums">{claimStock.total}</p>
-          {claimStock.byHolder.length === 0 ? (
-            <p className="mt-1 text-sm text-lead">None held right now.</p>
-          ) : (
-            <ul className="mt-2 space-y-1">
-              {claimStock.byHolder.map(([holder, n]) => (
-                <li key={holder} className="flex items-center justify-between text-sm">
-                  <span className="text-lead">{holder}</span>
-                  <span className="font-semibold tabular-nums">{n}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      <div
+        className={`anim-rise mt-6 grid gap-3 ${soloMode ? "" : "sm:grid-cols-2"}`}
+        style={delay(1)}
+      >
+        {(!soloMode || tab === "charging") && (
+          <div className="card p-4">
+            <p className="text-sm text-lead">In shop for charging</p>
+            <p className="mt-1 font-display text-3xl font-semibold tabular-nums">{chargingInShop}</p>
+            <p className="mt-1 text-sm text-lead">
+              {chargingInShop === 0 ? "No customer batteries in right now." : "Customer batteries currently being charged."}
+            </p>
+          </div>
+        )}
+        {(!soloMode || tab === "claims") && (
+          <div className="card p-4">
+            <p className="text-sm text-lead">Claimed batteries in stock</p>
+            <p className="mt-1 font-display text-3xl font-semibold tabular-nums">{claimStock.total}</p>
+            {claimStock.byHolder.length === 0 ? (
+              <p className="mt-1 text-sm text-lead">None held right now.</p>
+            ) : (
+              <ul className="mt-2 space-y-1">
+                {claimStock.byHolder.map(([holder, n]) => (
+                  <li key={holder} className="flex items-center justify-between text-sm">
+                    <span className="text-lead">{holder}</span>
+                    <span className="font-semibold tabular-nums">{n}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="anim-rise mt-4 space-y-3" style={delay(2)}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div role="tablist" aria-label="Battery services" className="inline-flex rounded-2xl bg-plate p-1.5">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "charging"}
-              onClick={() => setTab("charging")}
-              className={`min-h-10 rounded-xl px-4 text-[15px] font-semibold transition-all ${
-                tab === "charging" ? "bg-white text-casing shadow-card" : "text-lead hover:text-casing"
-              }`}
-            >
-              Charging jobs <span className="tabular-nums">({jobs.length})</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === "claims"}
-              onClick={() => setTab("claims")}
-              className={`min-h-10 rounded-xl px-4 text-[15px] font-semibold transition-all ${
-                tab === "claims" ? "bg-white text-casing shadow-card" : "text-lead hover:text-casing"
-              }`}
-            >
-              Battery claims <span className="tabular-nums">({claims.length})</span>
-            </button>
-          </div>
+          {!soloMode && (
+            <div role="tablist" aria-label="Battery services" className="inline-flex rounded-2xl bg-plate p-1.5">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "charging"}
+                onClick={() => setTab("charging")}
+                className={`min-h-10 rounded-xl px-4 text-[15px] font-semibold transition-all ${
+                  tab === "charging" ? "bg-white text-casing shadow-card" : "text-lead hover:text-casing"
+                }`}
+              >
+                Charging jobs <span className="tabular-nums">({jobs.length})</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "claims"}
+                onClick={() => setTab("claims")}
+                className={`min-h-10 rounded-xl px-4 text-[15px] font-semibold transition-all ${
+                  tab === "claims" ? "bg-white text-casing shadow-card" : "text-lead hover:text-casing"
+                }`}
+              >
+                Battery claims <span className="tabular-nums">({claims.length})</span>
+              </button>
+            </div>
+          )}
 
           <div className="relative sm:max-w-xs sm:flex-1">
             <label htmlFor="bs-search" className="sr-only">
@@ -286,6 +325,15 @@ export default function BatteryServicesClient({
                               Past due
                             </span>
                           )}
+                          {job.outcome && (
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 text-sm font-medium ${
+                                job.outcome === "charged" ? "bg-cell/10 text-cell-deep" : "bg-terminal/10 text-terminal-deep"
+                              }`}
+                            >
+                              {job.outcome === "charged" ? "Charged fine" : "Was faulty"}
+                            </span>
+                          )}
                         </div>
                         <p className="mt-1 font-semibold">
                           {job.battery_brand} {job.battery_model}
@@ -298,11 +346,15 @@ export default function BatteryServicesClient({
                         <p className="mt-1 text-sm text-lead">
                           Received {formatDay(job.received_date)} · due {formatDay(job.due_date)}
                         </p>
+                        {job.handover_note && <p className="mt-1 text-sm text-lead">Note: {job.handover_note}</p>}
                       </div>
                       <div className="text-right">
                         <p className="font-display text-2xl font-semibold tabular-nums leading-none">
                           {formatRs(job.price)}
                         </p>
+                        {job.handover_amount != null && (
+                          <p className="text-sm text-lead">{formatRs(job.handover_amount)} received</p>
+                        )}
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 border-t border-line/70 pt-3">
@@ -314,7 +366,7 @@ export default function BatteryServicesClient({
                           <button
                             type="button"
                             disabled={busyId === job.id}
-                            onClick={() => setJobStatus(job, "collected")}
+                            onClick={() => setHandoverTarget(job)}
                             className="btn btn-sm bg-cell/10 text-cell-deep hover:bg-cell/15"
                           >
                             <Icon name="check" className="h-4 w-4" /> Mark collected
@@ -439,6 +491,10 @@ export default function BatteryServicesClient({
           onClose={() => setStatusTarget(null)}
           onSaved={onClaimStatusSaved}
         />
+      )}
+
+      {handoverTarget && (
+        <ChargingHandoverForm job={handoverTarget} onClose={() => setHandoverTarget(null)} onSaved={onHandoverSaved} />
       )}
 
       <Toast message={toast} />
