@@ -1,0 +1,46 @@
+import type { Metadata } from "next";
+import { createClient } from "@/lib/supabase/server";
+import type { Customer } from "@/lib/types";
+import NewBill, { type BillCustomer, type BillItem } from "./NewBill";
+
+export const metadata: Metadata = { title: "New bill" };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export default async function NewBillPage({ searchParams }: { searchParams: Promise<{ customer?: string }> }) {
+  const { customer } = await searchParams;
+  const supabase = await createClient();
+
+  const [inventory, customers] = await Promise.all([
+    supabase
+      .from("inventory")
+      .select("id,category,brand,model,type,voltage,plates,ah_rating,wattage,warranty_months,cost_price,sale_price,quantity")
+      .order("brand")
+      .order("model"),
+    supabase.from("customers").select("id,name,phone,registration_type,cnic_or_ntn").order("name"),
+  ]);
+
+  if (inventory.error || customers.error) {
+    return (
+      <div className="card max-w-xl border-terminal/40 p-6">
+        <h1 className="font-display text-3xl font-bold">The bill screen could not be loaded</h1>
+        <p className="mt-3 text-lead">
+          Stock or customers did not load. Open Inventory and Customers to check they work, then try again.
+        </p>
+        <p className="mt-3 text-sm text-lead">Details: {(inventory.error ?? customers.error)?.message}</p>
+      </div>
+    );
+  }
+
+  const people = (customers.data ?? []) as (Pick<Customer, "id" | "name" | "phone" | "registration_type" | "cnic_or_ntn">)[];
+  const initialCustomerId = customer && UUID.test(customer) && people.some((p) => p.id === customer) ? customer : null;
+
+  return (
+    <NewBill
+      stock={(inventory.data ?? []) as unknown as BillItem[]}
+      customers={people as BillCustomer[]}
+      initialCustomerId={initialCustomerId}
+    />
+  );
+}
+
