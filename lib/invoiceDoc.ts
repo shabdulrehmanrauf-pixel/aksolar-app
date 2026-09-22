@@ -11,11 +11,11 @@ export type InvoiceDocument = {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const DEFAULT_SELLER: BusinessProfile = {
-  business_name: "Al Karam Battery and Solar",
+  business_name: "Al Karam Batteries & Solar",
   ntn: null,
-  address: null,
-  province: null,
-  phone: null,
+  address: "Shop#13 Blessing Centre, Plot Number SB 45, Block K, North Nazimabad, Karachi",
+  province: "Sindh",
+  phone: "03453177965",
 };
 
 /** Loads one bill with its lines, payments and the shop's own details. Returns null if it does not exist. Server only. */
