@@ -10,6 +10,7 @@ import { getBrowserClient } from "@/lib/supabase/lazy";
 import type { Category, InventoryItem } from "@/lib/types";
 import { CATEGORIES, categoryLabel, isLow, isOut, itemSpecs } from "@/lib/inventory";
 import { formatRs } from "@/lib/format";
+import { friendlyDeleteError } from "@/lib/invoices";
 import ItemForm from "./ItemForm";
 import StockGauge from "./StockGauge";
 
@@ -137,7 +138,7 @@ export default function InventoryClient({
     const { error } = await (await getBrowserClient()).from("inventory").delete().eq("id", deleting.id);
     setDeleteBusy(false);
     if (error) {
-      setDeleteError(`Could not delete. ${error.message}`);
+      setDeleteError(friendlyDeleteError(error, "item"));
       return;
     }
     setDeleting(null);
@@ -369,7 +370,7 @@ export default function InventoryClient({
       {deleting && (
         <ConfirmDialog
           title={`Delete ${deleting.brand} ${deleting.model}?`}
-          body={`This removes the item and its ${deleting.quantity} units from your stock list. It cannot be undone.`}
+          body={`This removes the item and its ${deleting.quantity} units from your stock list. It cannot be undone. An item that is on a bill cannot be deleted. Set its quantity to 0 instead.`}
           confirmLabel="Delete item"
           cancelLabel="Keep item"
           busy={deleteBusy}
