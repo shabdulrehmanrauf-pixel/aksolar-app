@@ -1,12 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Icon from "@/components/Icons";
 import PageHeader from "@/components/PageHeader";
 import { formatRs } from "@/lib/format";
-import { formatDay, invoiceMatches } from "@/lib/invoices";
+import { formatDay, friendlyInvoiceError, invoiceMatches } from "@/lib/invoices";
+import { getBrowserClient } from "@/lib/supabase/lazy";
 import type { Invoice } from "@/lib/types";
+import Toast from "@/components/Toast";
 import PayBadge from "./PayBadge";
 
 type Filter = "all" | "due" | "paid";
@@ -20,16 +23,64 @@ const TABS: { value: Filter; label: string }[] = [
 export default function SalesClient({ invoices, initialFilter }: { invoices: Invoice[]; initialFilter: Filter }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>(initialFilter);
+  const router = useRouter();
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const [target, setTarget] = useState<Invoice | null>(null);
+  const [restock, setRestock] = useState(true);
+  const [delBusy, setDelBusy] = useState(false);
+  const [delError, setDelError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  function askDelete(inv: Invoice) {
+    setRestock(true);
+    setDelError(null);
+    setTarget(inv);
+  }
+
+  async function confirmDelete() {
+    if (!target || delBusy) return;
+    setDelBusy(true);
+    setDelError(null);
+    try {
+      const supabase = await getBrowserClient();
+      const { error: dbError } = await supabase.rpc("delete_invoice", { p_invoice_id: target.id, p_restock: restock });
+      if (dbError) {
+        setDelError(
+          dbError.code === "42883" || dbError.code === "PGRST202"
+            ? "The delete setup is missing. Run 06_delete_invoice.sql in Supabase, then try again."
+            : friendlyInvoiceError(dbError)
+        );
+        setDelBusy(false);
+        return;
+      }
+      setDeletedIds((ids) => [...ids, target.id]);
+      setToast(`${target.invoice_number} deleted.`);
+      setTarget(null);
+      setDelBusy(false);
+      router.refresh();
+    } catch {
+      setDelError("The connection dropped. Refresh this page to see if the bill was deleted before you try again.");
+      setDelBusy(false);
+    }
+  }
+
+  const visible = useMemo(() => invoices.filter((i) => !deletedIds.includes(i.id)), [invoices, deletedIds]);
 
   const shown = useMemo(
     () =>
-      invoices.filter((inv) => {
+      visible.filter((inv) => {
         if (!invoiceMatches(inv, query)) return false;
         if (filter === "due") return inv.status !== "Cancelled" && inv.due_total > 0;
         if (filter === "paid") return inv.status !== "Cancelled" && inv.due_total <= 0;
         return true;
       }),
-    [invoices, query, filter]
+    [visible, query, filter]
   );
 
   const totalShown = shown.filter((i) => i.status !== "Cancelled").reduce((s, i) => s + i.total_value, 0);
@@ -39,7 +90,7 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
     <div>
       <PageHeader
         title="Sales"
-        subtitle={invoices.length === 0 ? "Your bills will appear here." : `${invoices.length} bills saved`}
+        subtitle={visible.length === 0 ? "Your bills will appear here." : `${visible.length} bills saved`}
         action={
           <Link href="/sales/new" className="btn btn-primary">
             <Icon name="plus" className="h-5 w-5" /> New bill
@@ -47,7 +98,7 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
         }
       />
 
-      {invoices.length === 0 ? (
+      {visible.length === 0 ? (
         <section className="card anim-rise mt-6 px-6 py-12 text-center">
           <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-sun/25 text-amber-800">
             <Icon name="receipt" className="h-7 w-7" />
@@ -125,6 +176,9 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
                       <th className="px-3 py-3 text-right font-medium">Total</th>
                       <th className="px-3 py-3 text-right font-medium">Due</th>
                       <th className="px-5 py-3 font-medium">Status</th>
+                      <th className="px-3 py-3 text-right font-medium">
+                        <span className="sr-only">Delete</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line/60">
@@ -148,6 +202,17 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
                         <td className="px-5 py-3.5">
                           <PayBadge status={inv.payment_status} bill={inv.status} />
                         </td>
+                        <td className="px-3 py-3.5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => askDelete(inv)}
+                            aria-label={`Delete bill ${inv.invoice_number}`}
+                            title="Delete bill"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-lead hover:bg-terminal/10 hover:text-terminal-deep"
+                          >
+                            <Icon name="trash" className="h-5 w-5" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -157,8 +222,8 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
               {/* Phone cards */}
               <ul className="mt-4 space-y-2.5 md:hidden">
                 {shown.map((inv) => (
-                  <li key={inv.id}>
-                    <Link href={`/sales/${inv.id}`} className="card card-hover flex items-center gap-3 p-4">
+                  <li key={inv.id} className="flex items-stretch gap-2">
+                    <Link href={`/sales/${inv.id}`} className="card card-hover flex min-w-0 flex-1 items-center gap-3 p-4">
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
                           <span className="truncate font-semibold">{inv.buyer_name}</span>
@@ -182,16 +247,72 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
                       </span>
                       <Icon name="chevron" className="h-4 w-4 text-lead/60" />
                     </Link>
+                    <button
+                      type="button"
+                      onClick={() => askDelete(inv)}
+                      aria-label={`Delete bill ${inv.invoice_number}`}
+                      className="card inline-flex w-12 shrink-0 items-center justify-center text-lead hover:bg-terminal/10 hover:text-terminal-deep"
+                    >
+                      <Icon name="trash" className="h-5 w-5" />
+                    </button>
                   </li>
                 ))}
               </ul>
-              {invoices.length >= 1000 && (
+              {visible.length >= 1000 && (
                 <p className="mt-3 text-sm text-lead">Showing the latest 1,000 bills.</p>
               )}
             </>
           )}
         </>
       )}
+
+      {target && (
+        <div className="anim-fade fixed inset-0 z-50 flex items-center justify-center bg-casing/60 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="del-title"
+            aria-describedby="del-text"
+            className="anim-pop w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+          >
+            <h2 id="del-title" className="font-display text-2xl font-bold">
+              Delete {target.invoice_number}?
+            </h2>
+            <p id="del-text" className="mt-2 text-lead">
+              This permanently deletes the bill for {target.buyer_name} ({formatRs(target.total_value)}) with all its
+              items and payments. It cannot be undone.
+            </p>
+            <label className="mt-4 flex items-start gap-3 rounded-xl bg-plate/70 px-3 py-3 text-[15px]">
+              <input
+                type="checkbox"
+                checked={restock}
+                onChange={(e) => setRestock(e.target.checked)}
+                disabled={delBusy}
+                className="mt-1 h-5 w-5"
+              />
+              <span>
+                <span className="block font-semibold">Put the items back in stock</span>
+                <span className="block text-lead">Turn this off only if the goods really left the shop.</span>
+              </span>
+            </label>
+            {delError && (
+              <p role="alert" className="mt-4 rounded-xl bg-terminal/10 px-3 py-2 text-sm text-terminal-deep">
+                {delError}
+              </p>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setTarget(null)} disabled={delBusy} autoFocus className="btn btn-quiet">
+                Keep it
+              </button>
+              <button type="button" onClick={confirmDelete} disabled={delBusy} className="btn btn-danger">
+                {delBusy ? "Deleting" : "Delete bill"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Toast message={toast} />
     </div>
   );
 }
