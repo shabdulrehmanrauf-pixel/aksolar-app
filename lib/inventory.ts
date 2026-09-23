@@ -16,14 +16,44 @@ export const PANEL_TYPES = [
 ];
 
 export const ACCESSORY_TYPES = [
+  "UPS",
+  "Inverter",
+  "Battery water",
+  "Battery charger",
+  "Charge controller",
   "Solar cable",
   "MC4 connector",
-  "Inverter",
-  "Charge controller",
   "Mounting structure",
-  "Battery water",
   "Battery terminal",
 ];
+
+/** The stock-type options shown under a category (Batteries: Lithium, Tubular ...). */
+export function typeOptionsFor(category: Category): string[] {
+  return category === "battery" ? BATTERY_TYPES : category === "panel" ? PANEL_TYPES : ACCESSORY_TYPES;
+}
+
+/**
+ * Groups spelling variations into one type, so "lithium", "Li-ion", "lead acid" and "Lead-acid" all filter together.
+ * Anything it does not recognise keeps its own name. A blank type becomes "Other".
+ */
+export function normalizeType(type: string | null | undefined): string {
+  const t = (type ?? "").trim();
+  if (!t) return "Other";
+  const known = [...BATTERY_TYPES, ...PANEL_TYPES, ...ACCESSORY_TYPES].find((k) => k.toLowerCase() === t.toLowerCase());
+  if (known) return known;
+  if (/lithium|li-?ion|lifepo/i.test(t)) return "Lithium";
+  if (/tubular/i.test(t)) return "Tubular";
+  if (/\bdry\b/i.test(t)) return "Dry";
+  if (/lead|acid|flooded/i.test(t)) return "Lead-acid";
+  if (/\bups\b/i.test(t)) return "UPS";
+  if (/water|electrolyte/i.test(t)) return "Battery water";
+  return t;
+}
+
+/** Short name for the filter buttons. */
+export function typeLabel(type: string): string {
+  return type === "Lead-acid" ? "Acid (lead-acid)" : type;
+}
 
 export const DEFAULT_UOM = "Numbers, pieces, units";
 
