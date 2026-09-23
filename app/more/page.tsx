@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Avatar from "@/components/Avatar";
 import Icon, { type IconName } from "@/components/Icons";
+import InstallAppButton from "@/components/InstallAppButton";
 import PageHeader from "@/components/PageHeader";
 import SignOutButton from "@/components/SignOutButton";
 import { createClient } from "@/lib/supabase/server";
@@ -58,7 +59,8 @@ export default async function MorePage() {
         ))}
       </ul>
 
-      <div className="anim-rise mt-6" style={{ "--i": 3 } as React.CSSProperties}>
+      <div className="anim-rise mt-6 space-y-2.5" style={{ "--i": 3 } as React.CSSProperties}>
+        <InstallAppButton />
         <SignOutButton />
       </div>
     </div>
