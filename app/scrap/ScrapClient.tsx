@@ -11,6 +11,7 @@ import { formatDay } from "@/lib/invoices";
 import { scrapIntakeMatches, scrapSaleMatches } from "@/lib/scrapBattery";
 import type { ScrapBatteryInventory, ScrapBatterySale } from "@/lib/types";
 import SellScrapForm from "./SellScrapForm";
+import AddScrapForm from "./AddScrapForm";
 
 type Tab = "stock" | "sales";
 
@@ -32,6 +33,7 @@ export default function ScrapClient({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sellFormOpen, setSellFormOpen] = useState(false);
+  const [addFormOpen, setAddFormOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
 
@@ -83,17 +85,28 @@ export default function ScrapClient({
     router.refresh();
   }
 
+  function onAdded(message: string) {
+    setAddFormOpen(false);
+    setToast(message);
+    router.refresh();
+  }
+
   return (
     <div>
       <PageHeader
         title="Scrap"
         subtitle="Old batteries taken in exchange, held until sold in bulk by weight."
         action={
-          selectedRows.length > 0 ? (
-            <button type="button" onClick={() => setSellFormOpen(true)} className="btn btn-primary">
-              <Icon name="box" className="h-5 w-5" /> Sell {selectedRows.length} selected
+          <div className="flex flex-wrap gap-2">
+            {selectedRows.length > 0 && (
+              <button type="button" onClick={() => setSellFormOpen(true)} className="btn btn-primary">
+                <Icon name="box" className="h-5 w-5" /> Sell {selectedRows.length} selected
+              </button>
+            )}
+            <button type="button" onClick={() => setAddFormOpen(true)} className="btn btn-quiet">
+              <Icon name="plus" className="h-5 w-5" /> Add scrap battery
             </button>
-          ) : undefined
+          </div>
         }
       />
 
@@ -307,6 +320,8 @@ export default function ScrapClient({
       </div>
 
       {sellFormOpen && <SellScrapForm rows={selectedRows} onClose={() => setSellFormOpen(false)} onSold={onSold} />}
+
+      {addFormOpen && <AddScrapForm onClose={() => setAddFormOpen(false)} onAdded={onAdded} />}
 
       <Toast message={toast} />
     </div>
