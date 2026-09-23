@@ -8,7 +8,7 @@ import PageHeader from "@/components/PageHeader";
 import Toast from "@/components/Toast";
 import { getBrowserClient } from "@/lib/supabase/lazy";
 import type { Category, InventoryItem } from "@/lib/types";
-import { CATEGORIES, categoryLabel, isLow, isOut, itemSpecs } from "@/lib/inventory";
+import { CATEGORIES, categoryLabel, isLow, isOut, itemSpecs, normalizeType, typeLabel, typeOptionsFor } from "@/lib/inventory";
 import { formatRs } from "@/lib/format";
 import { friendlyDeleteError } from "@/lib/invoices";
 import ItemForm from "./ItemForm";
@@ -63,6 +63,7 @@ export default function InventoryClient({
   const wantsAdd = useSearchParams().get("add") === "1";
   const [query, setQuery] = useState(initialQuery);
   const [category, setCategory] = useState<CategoryFilter>("all");
+  const [subType, setSubType] = useState<string>("all"); // "all" or a normalised type such as "Lithium" or "UPS"
   const [lowOnly, setLowOnly] = useState(initialLow);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<InventoryItem | null>(null);
@@ -99,10 +100,26 @@ export default function InventoryClient({
   const lowCount = useMemo(() => items.filter(isLow).length, [items]);
   const totalUnits = useMemo(() => items.reduce((sum, i) => sum + i.quantity, 0), [items]);
 
+  // Type buttons under the chosen category: the usual types first (even at 0), then any other type found in stock.
+  const typeTabs = useMemo(() => {
+    if (category === "all") return [];
+    const count = new Map<string, number>();
+    for (const i of items) {
+      if (i.category !== category) continue;
+      const t = normalizeType(i.type);
+      count.set(t, (count.get(t) ?? 0) + 1);
+    }
+    const usual = typeOptionsFor(category);
+    const extra = [...count.keys()].filter((t) => !usual.includes(t) && t !== "Other").sort();
+    const order = [...usual, ...extra, ...(count.has("Other") ? ["Other"] : [])];
+    return order.map((t) => ({ value: t, label: typeLabel(t), count: count.get(t) ?? 0 }));
+  }, [items, category]);
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((i) => {
       if (category !== "all" && i.category !== category) return false;
+      if (category !== "all" && subType !== "all" && normalizeType(i.type) !== subType) return false;
       if (lowOnly && !isLow(i)) return false;
       if (!q) return true;
       const haystack = [i.brand, i.model, i.type ?? "", categoryLabel(i.category), i.hs_code ?? ""]
@@ -110,7 +127,10 @@ export default function InventoryClient({
         .toLowerCase();
       return q.split(/\s+/).every((word) => haystack.includes(word));
     });
-  }, [items, query, category, lowOnly]);
+  }, [items, query, category, subType, lowOnly]);
+
+  const viewUnits = useMemo(() => visible.reduce((sum, i) => sum + i.quantity, 0), [visible]);
+  const viewLow = useMemo(() => visible.filter(isLow).length, [visible]);
 
   function openAdd() {
     setEditing(null);
@@ -151,10 +171,11 @@ export default function InventoryClient({
   function clearFilters() {
     setQuery("");
     setCategory("all");
+    setSubType("all");
     setLowOnly(false);
   }
 
-  const filtersActive = query.trim() !== "" || category !== "all" || lowOnly;
+  const filtersActive = query.trim() !== "" || category !== "all" || subType !== "all" || lowOnly;
 
   const tabs: { value: CategoryFilter; label: string; count: number }[] = [
     { value: "all", label: "All", count: counts.all },
@@ -219,7 +240,10 @@ export default function InventoryClient({
                 <button
                   key={tab.value}
                   type="button"
-                  onClick={() => setCategory(tab.value)}
+                  onClick={() => {
+                    setCategory(tab.value);
+                    setSubType("all");
+                  }}
                   aria-pressed={active}
                   className={`shrink-0 rounded-full border px-4 py-2 text-[15px] font-medium transition-colors ${
                     active
@@ -232,6 +256,40 @@ export default function InventoryClient({
               );
             })}
           </div>
+
+          {typeTabs.length > 0 && (
+            <div
+              role="group"
+              aria-label="Filter by type"
+              className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0"
+            >
+              {[{ value: "all", label: `All ${CATEGORIES.find((c) => c.value === category)?.plural.toLowerCase()}`, count: counts[category as Category] }, ...typeTabs].map((tab) => {
+                const active = subType === tab.value;
+                return (
+                  <button
+                    key={tab.value}
+                    type="button"
+                    onClick={() => setSubType(tab.value)}
+                    aria-pressed={active}
+                    className={`shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                      active
+                        ? "border-focus bg-focus text-white shadow-sm"
+                        : tab.count === 0
+                          ? "border-line bg-white text-lead/60 hover:border-lead/40"
+                          : "border-line bg-white text-casing hover:border-lead/40"
+                    }`}
+                  >
+                    {tab.label} <span className={`tabular-nums ${active ? "text-white/80" : "text-lead/80"}`}>{tab.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <p className="text-sm text-lead" aria-live="polite">
+            Showing {visible.length} {visible.length === 1 ? "item" : "items"}, {viewUnits} units in stock
+            {viewLow > 0 && <span className="font-semibold text-terminal-deep"> · {viewLow} low</span>}
+          </p>
         </div>
       )}
 
