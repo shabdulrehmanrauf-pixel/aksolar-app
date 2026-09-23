@@ -27,6 +27,7 @@ const QUICK_TILES: { href: string; label: string; icon: IconName; tone: string }
   { href: "/customers?add=1", label: "Add customer", icon: "userplus", tone: "from-violet-500 to-indigo-700 shadow-indigo-600/30" },
   { href: "/battery-services?tab=claims", label: "Claim", icon: "shield", tone: "from-rose-500 to-pink-700 shadow-rose-600/30" },
   { href: "/battery-services?tab=charging", label: "Charging", icon: "plug", tone: "from-cyan-500 to-sky-700 shadow-cyan-600/30" },
+  { href: "/scrap", label: "Scrap", icon: "box", tone: "from-stone-500 to-neutral-700 shadow-neutral-600/30" },
 ];
 
 type MoneySummary = {
