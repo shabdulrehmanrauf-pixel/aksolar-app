@@ -165,6 +165,12 @@ const ICONS = {
   ),
   chart: <path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6" />,
   arrowup: <path d="M7 17 17 7M8 7h9v9" />,
+  swap: (
+    <>
+      <path d="M4 7h13M13 3l4 4-4 4" />
+      <path d="M20 17H7M11 21l-4-4 4-4" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;
