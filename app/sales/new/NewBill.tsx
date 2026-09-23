@@ -15,7 +15,7 @@ import {
   REGISTRATION_TYPES,
 } from "@/lib/customers";
 import { formatRs } from "@/lib/format";
-import { categoryLabel, itemSpecs } from "@/lib/inventory";
+import { BATTERY_TYPES, categoryLabel, itemSpecs } from "@/lib/inventory";
 import {
   friendlyInvoiceError,
   lineAmount,
@@ -51,6 +51,21 @@ export type BillCustomer = Pick<Customer, "id" | "name" | "phone" | "registratio
 /** One row on the bill. Qty and rate are kept as text while typing, and checked before saving. */
 type Line = { itemId: string; qty: string; rate: string };
 type PayMode = "full" | "part" | "credit";
+
+/**
+ * An old battery the customer hands over in exchange for a new one on this bill (e.g. selling
+ * a Daewoo 55 and taking back their old Daewoo 55). Kept per bill-line, keyed by line itemId.
+ * Saved to the separate scrap battery inventory once the bill itself has saved successfully --
+ * see record_scrap_intake() in supabase/07_scrap_battery.sql.
+ */
+type Replacement = {
+  brand: string;
+  model: string;
+  batteryType: string;
+  batteryNumber: string;
+  qty: string;
+  note: string;
+};
 
 const PAY_MODES: { value: PayMode; label: string; hint: string }[] = [
   { value: "full", label: "Paid in full", hint: "Customer pays everything now" },
@@ -102,6 +117,9 @@ export default function NewBill({
   const [extraStock, setExtraStock] = useState<BillItem[]>([]);
   const [newItemIds, setNewItemIds] = useState<Set<string>>(new Set());
   const [addingItem, setAddingItem] = useState(false);
+
+  // Old batteries taken in exchange, one optional entry per battery line. See the Replacement type above.
+  const [replacements, setReplacements] = useState<Record<string, Replacement>>({});
 
   const [mode, setMode] = useState<PayMode>("full");
   const [partText, setPartText] = useState("");
@@ -162,11 +180,42 @@ export default function NewBill({
 
   const setLine = (itemId: string, patch: Partial<Line>) =>
     setLines((prev) => prev.map((l) => (l.itemId === itemId ? { ...l, ...patch } : l)));
-  const removeLine = (itemId: string) => setLines((prev) => prev.filter((l) => l.itemId !== itemId));
+  const removeLine = (itemId: string) => {
+    setLines((prev) => prev.filter((l) => l.itemId !== itemId));
+    setReplacements((prev) => {
+      if (!(itemId in prev)) return prev;
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  };
   const stepQty = (l: Line, delta: number) => {
     const next = Math.max(1, (parseQty(l.qty) ?? 1) + delta);
     setLine(l.itemId, { qty: String(next) });
   };
+
+  /* ---------- Replacement (old battery taken in exchange) ---------- */
+  const addReplacement = (itemId: string, item: BillItem, currentQty: string) =>
+    setReplacements((prev) => ({
+      ...prev,
+      [itemId]: {
+        brand: item.brand,
+        model: item.model,
+        batteryType: item.type ?? "",
+        batteryNumber: "",
+        qty: parseQty(currentQty) != null ? currentQty : "1",
+        note: "",
+      },
+    }));
+  const removeReplacement = (itemId: string) =>
+    setReplacements((prev) => {
+      if (!(itemId in prev)) return prev;
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  const setReplacementField = (itemId: string, patch: Partial<Replacement>) =>
+    setReplacements((prev) => (prev[itemId] ? { ...prev, [itemId]: { ...prev[itemId], ...patch } } : prev));
 
   /* ---------- Totals (always calculated in code) ---------- */
   const computed = lines.map((l) => {
@@ -199,6 +248,15 @@ export default function NewBill({
       if (c.rate == null) return `Enter a valid price for ${name} (numbers only, up to 2 decimals).`;
       if (c.overStock) {
         return `Only ${c.item.quantity} of ${name} in stock. Lower the quantity to ${c.item.quantity} or less.`;
+      }
+      const rep = replacements[c.line.itemId];
+      if (rep) {
+        if (!rep.brand.trim() || !rep.model.trim()) {
+          return `Enter the brand and model of the old battery taken in for ${name}, or remove that replacement.`;
+        }
+        if (parseQty(rep.qty) == null) {
+          return `Enter a quantity of 1 or more for the old battery taken in for ${name}.`;
+        }
       }
     }
     if (total <= 0) return "The bill total is zero. Check the prices.";
@@ -256,6 +314,37 @@ export default function NewBill({
         setSaving(false);
         return;
       }
+
+      // The bill is saved. Now hand over any old batteries taken in exchange to the scrap
+      // pile. This is a separate table from invoices (see supabase/07_scrap_battery.sql), so
+      // if one of these fails the bill itself is still safely saved -- we just log it rather
+      // than blocking the receipt, since re-running save() here would create a second bill.
+      const toRecord = computed.filter((c) => replacements[c.line.itemId]);
+      if (toRecord.length > 0) {
+        const results = await Promise.allSettled(
+          toRecord.map((c) => {
+            const rep = replacements[c.line.itemId];
+            return supabase.rpc("record_scrap_intake", {
+              p_invoice_id: data,
+              p_customer_id: customerId,
+              p_customer_name: customer ? customer.name : walkinName.trim() || "Walk-in customer",
+              p_brand: rep.brand.trim(),
+              p_model: rep.model.trim(),
+              p_battery_type: rep.batteryType.trim() || null,
+              p_battery_number: rep.batteryNumber.trim() || null,
+              p_quantity: parseQty(rep.qty),
+              p_estimated_weight_kg: null,
+              p_note: rep.note.trim() || null,
+              p_received_date: invoiceDate,
+            });
+          })
+        );
+        const failed = results.filter((r) => r.status === "rejected" || (r.status === "fulfilled" && r.value.error));
+        if (failed.length > 0) {
+          console.error("Some replacement batteries could not be recorded to the scrap pile:", failed);
+        }
+      }
+
       router.push(thenPrint ? `/print/${data}?auto=1` : `/sales/${data}`);
     } catch {
       setError("The connection dropped, so we could not confirm the bill was saved. Open Sales and check before you save again.");
@@ -720,6 +809,122 @@ export default function NewBill({
                           <span className="block font-display text-2xl font-semibold leading-[2.75rem] tabular-nums">{formatRs(c.amount)}</span>
                         </div>
                       </div>
+
+                      {c.item.category === "battery" && (
+                        <div className="mt-3">
+                          {!replacements[c.line.itemId] ? (
+                            <button
+                              type="button"
+                              className="btn btn-quiet btn-sm"
+                              onClick={() => addReplacement(c.line.itemId, c.item, c.line.qty)}
+                            >
+                              <Icon name="swap" className="h-4 w-4" /> Old battery taken in exchange
+                            </button>
+                          ) : (
+                            <div className="rounded-xl border border-line bg-plate/50 p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-casing">
+                                  <Icon name="swap" className="h-4 w-4" /> Old battery taken in exchange
+                                </p>
+                                <button
+                                  type="button"
+                                  className="text-sm font-medium text-lead hover:text-terminal-deep"
+                                  onClick={() => removeReplacement(c.line.itemId)}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                              <p className="mt-1 text-xs text-lead">
+                                Goes to the scrap pile, not back into sellable stock.
+                              </p>
+                              <div className="mt-2.5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                                <div className="col-span-1">
+                                  <label htmlFor={`rep-brand-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
+                                    Brand
+                                  </label>
+                                  <input
+                                    id={`rep-brand-${c.line.itemId}`}
+                                    value={replacements[c.line.itemId].brand}
+                                    onChange={(e) => setReplacementField(c.line.itemId, { brand: e.target.value })}
+                                    aria-invalid={!replacements[c.line.itemId].brand.trim()}
+                                    className="input h-10"
+                                  />
+                                </div>
+                                <div className="col-span-1">
+                                  <label htmlFor={`rep-model-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
+                                    Model
+                                  </label>
+                                  <input
+                                    id={`rep-model-${c.line.itemId}`}
+                                    value={replacements[c.line.itemId].model}
+                                    onChange={(e) => setReplacementField(c.line.itemId, { model: e.target.value })}
+                                    aria-invalid={!replacements[c.line.itemId].model.trim()}
+                                    className="input h-10"
+                                  />
+                                </div>
+                                <div className="col-span-1">
+                                  <label htmlFor={`rep-type-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
+                                    Type (optional)
+                                  </label>
+                                  <select
+                                    id={`rep-type-${c.line.itemId}`}
+                                    value={replacements[c.line.itemId].batteryType}
+                                    onChange={(e) => setReplacementField(c.line.itemId, { batteryType: e.target.value })}
+                                    className="input h-10"
+                                  >
+                                    <option value="">Unknown</option>
+                                    {BATTERY_TYPES.map((t) => (
+                                      <option key={t} value={t}>
+                                        {t}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="col-span-1">
+                                  <label htmlFor={`rep-qty-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
+                                    Qty
+                                  </label>
+                                  <input
+                                    id={`rep-qty-${c.line.itemId}`}
+                                    value={replacements[c.line.itemId].qty}
+                                    onChange={(e) =>
+                                      setReplacementField(c.line.itemId, { qty: e.target.value.replace(/\D/g, "") })
+                                    }
+                                    inputMode="numeric"
+                                    aria-invalid={parseQty(replacements[c.line.itemId].qty) == null}
+                                    className="input h-10 tabular-nums"
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-2.5 grid grid-cols-2 gap-2.5">
+                                <div>
+                                  <label htmlFor={`rep-number-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
+                                    Serial / plate number (optional)
+                                  </label>
+                                  <input
+                                    id={`rep-number-${c.line.itemId}`}
+                                    value={replacements[c.line.itemId].batteryNumber}
+                                    onChange={(e) => setReplacementField(c.line.itemId, { batteryNumber: e.target.value })}
+                                    className="input h-10"
+                                  />
+                                </div>
+                                <div>
+                                  <label htmlFor={`rep-note-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
+                                    Note (optional)
+                                  </label>
+                                  <input
+                                    id={`rep-note-${c.line.itemId}`}
+                                    value={replacements[c.line.itemId].note}
+                                    onChange={(e) => setReplacementField(c.line.itemId, { note: e.target.value })}
+                                    placeholder="Condition, etc."
+                                    className="input h-10"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
