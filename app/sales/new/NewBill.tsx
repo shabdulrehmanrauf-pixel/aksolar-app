@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import Icon from "@/components/Icons";
 import PageHeader from "@/components/PageHeader";
+import Sheet from "@/components/Sheet";
 import {
   cleanRegNo,
   customerMatches,
@@ -64,6 +65,7 @@ type Replacement = {
   batteryType: string;
   batteryNumber: string;
   qty: string;
+  weight: string;
   note: string;
 };
 
@@ -128,6 +130,13 @@ export default function NewBill({
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  // If the bill saves but a replacement battery can't be recorded to the scrap pile (see
+  // save() below), we hold the "go to receipt" navigation here and show it on-screen instead
+  // of only logging to the console, so counter staff actually see it before leaving the page.
+  const [scrapFailure, setScrapFailure] = useState<{
+    names: string[];
+    goTo: string;
+  } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const customer = customers.find((c) => c.id === customerId) ?? null;
@@ -204,6 +213,7 @@ export default function NewBill({
         batteryType: item.type ?? "",
         batteryNumber: "",
         qty: parseQty(currentQty) != null ? currentQty : "1",
+        weight: "",
         note: "",
       },
     }));
@@ -256,6 +266,9 @@ export default function NewBill({
         }
         if (parseQty(rep.qty) == null) {
           return `Enter a quantity of 1 or more for the old battery taken in for ${name}.`;
+        }
+        if (rep.weight.trim() !== "" && (parseAmount(rep.weight) == null || (parseAmount(rep.weight) ?? 0) <= 0)) {
+          return `Enter a valid weight in kg for the old battery taken in for ${name}, or leave it blank.`;
         }
       }
     }
@@ -317,35 +330,59 @@ export default function NewBill({
 
       // The bill is saved. Now hand over any old batteries taken in exchange to the scrap
       // pile. This is a separate table from invoices (see supabase/07_scrap_battery.sql), so
-      // if one of these fails the bill itself is still safely saved -- we just log it rather
-      // than blocking the receipt, since re-running save() here would create a second bill.
+      // if one of these fails the bill itself is still safely saved -- we never re-run save()
+      // here, since that would create a second bill.
       const toRecord = computed.filter((c) => replacements[c.line.itemId]);
+      const goTo = thenPrint ? `/print/${data}?auto=1` : `/sales/${data}`;
       if (toRecord.length > 0) {
-        const results = await Promise.allSettled(
-          toRecord.map((c) => {
-            const rep = replacements[c.line.itemId];
-            return supabase.rpc("record_scrap_intake", {
-              p_invoice_id: data,
-              p_customer_id: customerId,
-              p_customer_name: customer ? customer.name : walkinName.trim() || "Walk-in customer",
-              p_brand: rep.brand.trim(),
-              p_model: rep.model.trim(),
-              p_battery_type: rep.batteryType.trim() || null,
-              p_battery_number: rep.batteryNumber.trim() || null,
-              p_quantity: parseQty(rep.qty),
-              p_estimated_weight_kg: null,
-              p_note: rep.note.trim() || null,
-              p_received_date: invoiceDate,
-            });
-          })
+        const recordOne = (c: (typeof toRecord)[number]) => {
+          const rep = replacements[c.line.itemId];
+          const weight = rep.weight.trim() ? parseAmount(rep.weight) : null;
+          return supabase.rpc("record_scrap_intake", {
+            p_invoice_id: data,
+            p_customer_id: customerId,
+            p_customer_name: customer ? customer.name : walkinName.trim() || "Walk-in customer",
+            p_brand: rep.brand.trim(),
+            p_model: rep.model.trim(),
+            p_battery_type: rep.batteryType.trim() || null,
+            p_battery_number: rep.batteryNumber.trim() || null,
+            p_quantity: parseQty(rep.qty),
+            p_estimated_weight_kg: weight,
+            p_note: rep.note.trim() || null,
+            p_received_date: invoiceDate,
+          });
+        };
+
+        // Try each once, pairing each item with its own result so nothing depends on index order.
+        const firstPass = await Promise.all(
+          toRecord.map(async (c) => ({ c, ok: !(await recordOne(c)).error }))
         );
-        const failed = results.filter((r) => r.status === "rejected" || (r.status === "fulfilled" && r.value.error));
-        if (failed.length > 0) {
-          console.error("Some replacement batteries could not be recorded to the scrap pile:", failed);
+        let stillFailed = firstPass.filter((r) => !r.ok).map((r) => r.c);
+
+        if (stillFailed.length > 0) {
+          // One retry after a short pause covers the common transient case (a dropped connection
+          // between the two calls) without risking a duplicate scrap row, since record_scrap_intake
+          // is only retried here, never the bill save itself.
+          await new Promise((r) => setTimeout(r, 900));
+          const retryPass = await Promise.all(
+            stillFailed.map(async (c) => ({ c, ok: !(await recordOne(c)).error }))
+          );
+          stillFailed = retryPass.filter((r) => !r.ok).map((r) => r.c);
+        }
+
+        if (stillFailed.length > 0) {
+          console.error("Some replacement batteries could not be recorded to the scrap pile:", stillFailed);
+          setScrapFailure({
+            names: stillFailed.map((c) => `${c.item.brand} ${c.item.model}`),
+            goTo,
+          });
+          savingRef.current = false;
+          setSaving(false);
+          return; // hold here so staff sees the warning before moving on to the receipt
         }
       }
 
-      router.push(thenPrint ? `/print/${data}?auto=1` : `/sales/${data}`);
+      router.push(goTo);
     } catch {
       setError("The connection dropped, so we could not confirm the bill was saved. Open Sales and check before you save again.");
       savingRef.current = false;
@@ -866,19 +903,14 @@ export default function NewBill({
                                   <label htmlFor={`rep-type-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
                                     Type (optional)
                                   </label>
-                                  <select
+                                  <input
                                     id={`rep-type-${c.line.itemId}`}
+                                    list="rep-battery-types"
                                     value={replacements[c.line.itemId].batteryType}
                                     onChange={(e) => setReplacementField(c.line.itemId, { batteryType: e.target.value })}
+                                    placeholder="Unknown"
                                     className="input h-10"
-                                  >
-                                    <option value="">Unknown</option>
-                                    {BATTERY_TYPES.map((t) => (
-                                      <option key={t} value={t}>
-                                        {t}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  />
                                 </div>
                                 <div className="col-span-1">
                                   <label htmlFor={`rep-qty-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
@@ -909,17 +941,35 @@ export default function NewBill({
                                   />
                                 </div>
                                 <div>
-                                  <label htmlFor={`rep-note-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
-                                    Note (optional)
+                                  <label htmlFor={`rep-weight-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
+                                    Weight in kg (optional)
                                   </label>
                                   <input
-                                    id={`rep-note-${c.line.itemId}`}
-                                    value={replacements[c.line.itemId].note}
-                                    onChange={(e) => setReplacementField(c.line.itemId, { note: e.target.value })}
-                                    placeholder="Condition, etc."
-                                    className="input h-10"
+                                    id={`rep-weight-${c.line.itemId}`}
+                                    inputMode="decimal"
+                                    value={replacements[c.line.itemId].weight}
+                                    onChange={(e) => setReplacementField(c.line.itemId, { weight: e.target.value })}
+                                    aria-invalid={
+                                      replacements[c.line.itemId].weight.trim() !== "" &&
+                                      (parseAmount(replacements[c.line.itemId].weight) == null ||
+                                        (parseAmount(replacements[c.line.itemId].weight) ?? 0) <= 0)
+                                    }
+                                    placeholder="Usually weighed together at sale time"
+                                    className="input h-10 tabular-nums"
                                   />
                                 </div>
+                              </div>
+                              <div className="mt-2.5">
+                                <label htmlFor={`rep-note-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
+                                  Note (optional)
+                                </label>
+                                <input
+                                  id={`rep-note-${c.line.itemId}`}
+                                  value={replacements[c.line.itemId].note}
+                                  onChange={(e) => setReplacementField(c.line.itemId, { note: e.target.value })}
+                                  placeholder="Condition, etc."
+                                  className="input h-10"
+                                />
                               </div>
                             </div>
                           )}
@@ -928,6 +978,11 @@ export default function NewBill({
                     </li>
                   ))}
                 </ul>
+                <datalist id="rep-battery-types">
+                  {BATTERY_TYPES.map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
               </div>
             )}
           </section>
@@ -1079,6 +1134,47 @@ export default function NewBill({
       )}
 
       {addingItem && <ManualItemForm onClose={() => setAddingItem(false)} onAdded={handleManualItemAdded} />}
+
+      {scrapFailure && (
+        <Sheet onClose={() => {}} labelledBy="scrap-failure-title" dismissable={false}>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="border-b border-line px-5 py-4">
+              <h2 id="scrap-failure-title" className="font-display text-2xl font-bold text-terminal-deep">
+                Bill saved — one thing to fix
+              </h2>
+            </div>
+            <div className="flex-1 space-y-3 overflow-y-auto px-5 py-6">
+              <p>The bill itself saved fine and the customer's receipt is ready.</p>
+              <p>
+                But the old {scrapFailure.names.length === 1 ? "battery" : "batteries"} taken in exchange could not be
+                recorded to the scrap pile after two tries:
+              </p>
+              <ul className="list-disc space-y-1 pl-5 text-sm">
+                {scrapFailure.names.map((n, i) => (
+                  <li key={i}>{n}</li>
+                ))}
+              </ul>
+              <p className="text-sm text-lead">
+                Open the Scrap screen and add {scrapFailure.names.length === 1 ? "it" : "them"} by hand, or ask
+                whoever set up the app to check the connection.
+              </p>
+            </div>
+            <div className="border-t border-line bg-white px-5 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  const goTo = scrapFailure.goTo;
+                  setScrapFailure(null);
+                  router.push(goTo);
+                }}
+                className="btn btn-primary w-full"
+              >
+                Continue to receipt
+              </button>
+            </div>
+          </div>
+        </Sheet>
+      )}
 
       {toast && (
         <p role="status" className="anim-pop fixed inset-x-4 bottom-40 z-[60] mx-auto w-fit max-w-sm rounded-full bg-casing px-4 py-2.5 text-center text-[15px] font-medium text-white shadow-lift lg:bottom-8">
