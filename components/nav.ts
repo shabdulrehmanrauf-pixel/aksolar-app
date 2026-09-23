@@ -22,6 +22,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/sales", label: "Sales", icon: "receipt" },
   { href: "/reports", label: "Reports", icon: "chart", desktopOnly: true },
   { href: "/battery-services", label: "Battery services", icon: "plug", desktopOnly: true },
+  { href: "/scrap", label: "Scrap", icon: "box", desktopOnly: true },
 ];
 
 export const MORE_ITEM: NavItem = { href: "/more", label: "More", icon: "more" };
