@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Scrap" };
 
 export default async function ScrapPage() {
   const supabase = await createClient();
-  const [stockRes, salesRes] = await Promise.all([
+  const [stockRes, salesRes, soldRes] = await Promise.all([
     supabase
       .from("scrap_battery_inventory")
       .select("*")
@@ -20,6 +20,12 @@ export default async function ScrapPage() {
       .order("sale_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(200),
+    // Sold batteries, fetched so each sale row can expand to show exactly which batteries were in that lot.
+    supabase
+      .from("scrap_battery_inventory")
+      .select("*")
+      .eq("status", "sold")
+      .order("intake_number"),
   ]);
 
   if (stockRes.error && salesRes.error) {
@@ -39,6 +45,7 @@ export default async function ScrapPage() {
     <ScrapClient
       stock={(stockRes.data ?? []) as ScrapBatteryInventory[]}
       sales={(salesRes.data ?? []) as ScrapBatterySale[]}
+      soldBatteries={(soldRes.data ?? []) as ScrapBatteryInventory[]}
       setupIncomplete={!!stockRes.error || !!salesRes.error}
     />
   );
