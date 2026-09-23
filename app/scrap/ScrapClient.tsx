@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Icon from "@/components/Icons";
 import PageHeader from "@/components/PageHeader";
@@ -18,10 +19,12 @@ const delay = (i: number) => ({ "--i": Math.min(i, 8) }) as React.CSSProperties;
 export default function ScrapClient({
   stock,
   sales,
+  soldBatteries,
   setupIncomplete,
 }: {
   stock: ScrapBatteryInventory[];
   sales: ScrapBatterySale[];
+  soldBatteries: ScrapBatteryInventory[];
   setupIncomplete: boolean;
 }) {
   const router = useRouter();
@@ -30,6 +33,19 @@ export default function ScrapClient({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sellFormOpen, setSellFormOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
+
+  // Which batteries were in each sold lot, keyed by sale id (scrap_battery_inventory.sold_in_sale_id).
+  const batteriesBySale = useMemo(() => {
+    const map = new Map<string, ScrapBatteryInventory[]>();
+    for (const row of soldBatteries) {
+      if (!row.sold_in_sale_id) continue;
+      const list = map.get(row.sold_in_sale_id);
+      if (list) list.push(row);
+      else map.set(row.sold_in_sale_id, [row]);
+    }
+    return map;
+  }, [soldBatteries]);
 
   const visibleStock = useMemo(
     () => (query.trim() ? stock.filter((r) => scrapIntakeMatches(r, query)) : stock),
@@ -229,26 +245,63 @@ export default function ScrapClient({
           />
         ) : (
           <ul className="space-y-3">
-            {visibleSales.map((sale, idx) => (
-              <li key={sale.id} className="card anim-rise p-4" style={delay(idx + 3)}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <span className="font-display text-lg font-semibold tabular-nums">{sale.sale_number}</span>
-                    <p className="mt-1 font-semibold">{sale.buyer_name}</p>
-                    {sale.buyer_phone && <p className="text-sm text-lead">{sale.buyer_phone}</p>}
-                    <p className="mt-1 text-sm text-lead">
-                      {formatDay(sale.sale_date)} · {sale.total_weight_kg.toLocaleString("en-US", { maximumFractionDigits: 2 })} kg
-                      {" @ "}
-                      {formatRs(sale.rate_per_kg)}/kg
+            {visibleSales.map((sale, idx) => {
+              const lot = batteriesBySale.get(sale.id) ?? [];
+              const expanded = expandedSaleId === sale.id;
+              return (
+                <li key={sale.id} className="card anim-rise p-4" style={delay(idx + 3)}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-display text-lg font-semibold tabular-nums">{sale.sale_number}</span>
+                      <p className="mt-1 font-semibold">{sale.buyer_name}</p>
+                      {sale.buyer_phone && <p className="text-sm text-lead">{sale.buyer_phone}</p>}
+                      <p className="mt-1 text-sm text-lead">
+                        {formatDay(sale.sale_date)} · {sale.total_weight_kg.toLocaleString("en-US", { maximumFractionDigits: 2 })} kg
+                        {" @ "}
+                        {formatRs(sale.rate_per_kg)}/kg
+                      </p>
+                      {sale.note && <p className="mt-1 text-sm text-lead">Note: {sale.note}</p>}
+                    </div>
+                    <p className="font-display text-2xl font-semibold tabular-nums leading-none">
+                      {formatRs(sale.total_amount)}
                     </p>
-                    {sale.note && <p className="mt-1 text-sm text-lead">Note: {sale.note}</p>}
                   </div>
-                  <p className="font-display text-2xl font-semibold tabular-nums leading-none">
-                    {formatRs(sale.total_amount)}
-                  </p>
-                </div>
-              </li>
-            ))}
+
+                  <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-line pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedSaleId(expanded ? null : sale.id)}
+                      className="inline-flex items-center gap-1 text-sm font-semibold text-focus hover:underline"
+                    >
+                      <Icon name="chevron" className={`h-4 w-4 transition-transform ${expanded ? "rotate-90" : ""}`} />
+                      {lot.length > 0
+                        ? `${lot.length} ${lot.length === 1 ? "battery record" : "battery records"} in this lot`
+                        : "No battery records linked"}
+                    </button>
+                    <Link
+                      href={`/print/scrap/${sale.id}?auto=1`}
+                      className="inline-flex items-center gap-1.5 text-sm font-semibold text-lead hover:text-casing"
+                    >
+                      <Icon name="printer" className="h-4 w-4" /> Print slip
+                    </Link>
+                  </div>
+
+                  {expanded && lot.length > 0 && (
+                    <ul className="mt-2 space-y-1.5 rounded-xl bg-plate/60 px-3.5 py-2.5 text-sm">
+                      {lot.map((b) => (
+                        <li key={b.id} className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="min-w-0 truncate">
+                            <span className="tabular-nums text-lead">{b.intake_number}</span> · {b.brand} {b.model}
+                            {b.battery_number ? ` · ${b.battery_number}` : ""}
+                          </span>
+                          <span className="shrink-0 text-lead">Qty {b.quantity}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
