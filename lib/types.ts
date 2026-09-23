@@ -172,3 +172,51 @@ export type BatteryClaim = {
   settled_at: string | null;
   created_at: string;
 };
+
+/* ---------- Scrap batteries: old batteries taken in exchange, sold in bulk by weight (Phase 7) ---------- */
+/* See supabase/07_scrap_battery.sql. Not resaleable stock -- kept separate from public.inventory. */
+
+export type ScrapBatteryStatus = "in_stock" | "sold";
+
+/** One old battery taken in, either as part of a bill's exchange (see NewBill.tsx) or added by hand. */
+export type ScrapBatteryInventory = {
+  id: string;
+  intake_number: string;
+  invoice_id: string | null;
+  customer_id: string | null;
+  customer_name: string | null;
+  brand: string;
+  model: string;
+  battery_type: string | null;
+  battery_number: string | null;
+  quantity: number;
+  estimated_weight_kg: number | null;
+  note: string | null;
+  status: ScrapBatteryStatus;
+  received_date: string; // YYYY-MM-DD
+  sold_in_sale_id: string | null;
+  created_at: string;
+};
+
+/** One bulk, weighed sale of scrap batteries to a scrap/kabari buyer. */
+export type ScrapBatterySale = {
+  id: string;
+  sale_number: string;
+  buyer_name: string;
+  buyer_phone: string | null;
+  total_weight_kg: number;
+  rate_per_kg: number;
+  total_amount: number; // computed = total_weight_kg * rate_per_kg
+  sale_date: string; // YYYY-MM-DD
+  note: string | null;
+  created_at: string;
+};
+
+/** One row from the public.scrap_stock_summary view: what's on hand right now. */
+export type ScrapStockSummary = {
+  batches_in_stock: number;
+  batteries_in_stock: number;
+  estimated_weight_in_stock_kg: number;
+  batches_sold: number;
+  batteries_sold: number;
+};
