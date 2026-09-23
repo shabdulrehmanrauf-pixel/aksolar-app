@@ -24,6 +24,10 @@ export default function InvoiceDetail({ doc }: { doc: InvoiceDocument }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [restock, setRestock] = useState(true);
+  const [delBusy, setDelBusy] = useState(false);
+  const [delError, setDelError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -74,6 +78,39 @@ export default function InvoiceDetail({ doc }: { doc: InvoiceDocument }) {
     } catch {
       setError("The connection dropped. Refresh this page to see if the payment was saved before you try again.");
       setBusy(false);
+    }
+  }
+
+  function openDelete() {
+    setRestock(true);
+    setDelError(null);
+    setDeleting(true);
+  }
+
+  async function deleteBill() {
+    if (delBusy) return;
+    setDelBusy(true);
+    setDelError(null);
+    try {
+      const supabase = await getBrowserClient();
+      const { error: dbError } = await supabase.rpc("delete_invoice", {
+        p_invoice_id: inv.id,
+        p_restock: restock,
+      });
+      if (dbError) {
+        setDelError(
+          dbError.code === "42883" || dbError.code === "PGRST202"
+            ? "The delete setup is missing. Run 06_delete_invoice.sql in Supabase, then try again."
+            : friendlyInvoiceError(dbError)
+        );
+        setDelBusy(false);
+        return;
+      }
+      router.replace("/sales");
+      router.refresh();
+    } catch {
+      setDelError("The connection dropped. Refresh this page to see if the bill was deleted before you try again.");
+      setDelBusy(false);
     }
   }
 
@@ -216,6 +253,16 @@ export default function InvoiceDetail({ doc }: { doc: InvoiceDocument }) {
               </ul>
             )}
           </section>
+
+          <section className="card anim-rise p-5" style={{ "--i": 4 } as React.CSSProperties}>
+            <h2 className="font-display text-2xl font-semibold">Delete this bill</h2>
+            <p className="mt-2 text-[15px] text-lead">
+              Removes the bill, its items and its payments completely. Use this for demo or test bills.
+            </p>
+            <button type="button" onClick={openDelete} className="btn btn-danger mt-3">
+              <Icon name="trash" className="h-5 w-5" /> Delete bill
+            </button>
+          </section>
         </div>
       </div>
 
@@ -287,6 +334,52 @@ export default function InvoiceDetail({ doc }: { doc: InvoiceDocument }) {
             </div>
           </form>
         </Sheet>
+      )}
+
+      {deleting && (
+        <div className="anim-fade fixed inset-0 z-50 flex items-center justify-center bg-casing/60 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="del-title"
+            aria-describedby="del-text"
+            className="anim-pop w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+          >
+            <h2 id="del-title" className="font-display text-2xl font-bold">
+              Delete {inv.invoice_number}?
+            </h2>
+            <p id="del-text" className="mt-2 text-lead">
+              This permanently deletes the bill for {inv.buyer_name} ({formatRs(inv.total_value)}) with all its items
+              and payments. It cannot be undone.
+            </p>
+            <label className="mt-4 flex items-start gap-3 rounded-xl bg-plate/70 px-3 py-3 text-[15px]">
+              <input
+                type="checkbox"
+                checked={restock}
+                onChange={(e) => setRestock(e.target.checked)}
+                disabled={delBusy}
+                className="mt-1 h-5 w-5"
+              />
+              <span>
+                <span className="block font-semibold">Put the items back in stock</span>
+                <span className="block text-lead">Turn this off only if the goods really left the shop.</span>
+              </span>
+            </label>
+            {delError && (
+              <p role="alert" className="mt-4 rounded-xl bg-terminal/10 px-3 py-2 text-sm text-terminal-deep">
+                {delError}
+              </p>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setDeleting(false)} disabled={delBusy} autoFocus className="btn btn-quiet">
+                Keep it
+              </button>
+              <button type="button" onClick={deleteBill} disabled={delBusy} className="btn btn-danger">
+                {delBusy ? "Deleting" : "Delete bill"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <Toast message={toast} />
