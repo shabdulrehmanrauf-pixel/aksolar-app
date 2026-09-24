@@ -8,6 +8,10 @@ import PageHeader from "@/components/PageHeader";
 import { formatRs } from "@/lib/format";
 import { formatDay, friendlyInvoiceError, invoiceMatches } from "@/lib/invoices";
 import { getBrowserClient } from "@/lib/supabase/lazy";
+import { offlineDb, type LocalInvoice } from "@/lib/offline/db";
+import { useLiveQuery } from "@/lib/offline/useLiveQuery";
+import { checkRealConnectivity, isBrowserOnline } from "@/lib/offline/net";
+import { notifySyncListeners } from "@/lib/offline/sync";
 import type { Invoice } from "@/lib/types";
 import Toast from "@/components/Toast";
 import PayBadge from "./PayBadge";
@@ -20,16 +24,47 @@ const TABS: { value: Filter; label: string }[] = [
   { value: "paid", label: "Paid" },
 ];
 
-export default function SalesClient({ invoices, initialFilter }: { invoices: Invoice[]; initialFilter: Filter }) {
+export default function SalesClient({
+  invoices: serverInvoices,
+  initialFilter,
+}: {
+  invoices: Invoice[];
+  initialFilter: Filter;
+}) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>(initialFilter);
   const router = useRouter();
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
-  const [target, setTarget] = useState<Invoice | null>(null);
+  const [target, setTarget] = useState<LocalInvoice | null>(null);
   const [restock, setRestock] = useState(true);
   const [delBusy, setDelBusy] = useState(false);
   const [delError, setDelError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  // Mirror fresh server data into the offline cache -- but only when we're
+  // actually online, since a page served from the service worker's offline
+  // cache carries stale props that must not overwrite newer local edits.
+  useEffect(() => {
+    if (!isBrowserOnline() || serverInvoices.length === 0) return;
+    const rows: LocalInvoice[] = serverInvoices.map((r) => ({ ...r, pending: false, local_id: r.id }));
+    offlineDb.invoices.bulkPut(rows).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverInvoices]);
+
+  // Newest first, same order the server query used -- but this also includes
+  // bills created offline that haven't synced yet (they carry pending: true).
+  const invoices = useLiveQuery(
+    () =>
+      offlineDb.invoices
+        .toArray()
+        .then((rows) =>
+          rows.sort(
+            (a, b) => b.invoice_date.localeCompare(a.invoice_date) || b.created_at.localeCompare(a.created_at)
+          )
+        ),
+    [],
+    serverInvoices.map((r) => ({ ...r, pending: false, local_id: r.id }) as LocalInvoice)
+  );
 
   useEffect(() => {
     if (!toast) return;
@@ -37,7 +72,7 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
     return () => clearTimeout(t);
   }, [toast]);
 
-  function askDelete(inv: Invoice) {
+  function askDelete(inv: LocalInvoice) {
     setRestock(true);
     setDelError(null);
     setTarget(inv);
@@ -47,6 +82,41 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
     if (!target || delBusy) return;
     setDelBusy(true);
     setDelError(null);
+
+    // A bill made offline and not yet synced only exists on this device --
+    // there's nothing to tell Supabase, so discarding it is a purely local
+    // action: drop the cached rows and cancel whatever is still queued for it.
+    if (target.pending) {
+      try {
+        await offlineDb.invoices.delete(target.id);
+        const items = await offlineDb.invoice_items.where("invoice_id").equals(target.id).toArray();
+        await offlineDb.invoice_items.bulkDelete(items.map((i) => i.id));
+        const queued = await offlineDb.pending_sync.toArray();
+        const toDrop = queued.filter((a) => a.group_id === target.local_id).map((a) => a.id!);
+        if (toDrop.length > 0) await offlineDb.pending_sync.bulkDelete(toDrop);
+        // Put the stock this draft had reserved back, since it never really left.
+        for (const item of items) {
+          const cached = await offlineDb.inventory.get(item.inventory_id);
+          if (cached) await offlineDb.inventory.put({ ...cached, quantity: cached.quantity + item.quantity });
+        }
+        notifySyncListeners();
+        setToast("Draft bill discarded.");
+        setTarget(null);
+        setDelBusy(false);
+      } catch {
+        setDelError("Could not discard this draft. Please try again.");
+        setDelBusy(false);
+      }
+      return;
+    }
+
+    const online = await checkRealConnectivity();
+    if (!online) {
+      setDelError("Deleting a saved bill needs a connection, so its stock and payment records can be reversed correctly. Try again once you're back online.");
+      setDelBusy(false);
+      return;
+    }
+
     try {
       const supabase = await getBrowserClient();
       const { error: dbError } = await supabase.rpc("delete_invoice", { p_invoice_id: target.id, p_restock: restock });
@@ -59,6 +129,7 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
         setDelBusy(false);
         return;
       }
+      await offlineDb.invoices.delete(target.id); // keep the offline cache from bringing it back
       setDeletedIds((ids) => [...ids, target.id]);
       setToast(`${target.invoice_number} deleted.`);
       setTarget(null);
@@ -185,9 +256,16 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
                     {shown.map((inv) => (
                       <tr key={inv.id} className="transition-colors hover:bg-plate/50">
                         <td className="px-5 py-3.5">
-                          <Link href={`/sales/${inv.id}`} className="font-semibold text-focus hover:underline">
-                            {inv.invoice_number}
-                          </Link>
+                          {inv.pending ? (
+                            <span className="inline-flex items-center gap-1.5 font-semibold text-lead">
+                              Pending sync
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                            </span>
+                          ) : (
+                            <Link href={`/sales/${inv.id}`} className="font-semibold text-focus hover:underline">
+                              {inv.invoice_number}
+                            </Link>
+                          )}
                         </td>
                         <td className="px-3 py-3.5 tabular-nums text-lead">{formatDay(inv.invoice_date)}</td>
                         <td className="max-w-[16rem] truncate px-3 py-3.5 font-medium">{inv.buyer_name}</td>
@@ -206,8 +284,8 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
                           <button
                             type="button"
                             onClick={() => askDelete(inv)}
-                            aria-label={`Delete bill ${inv.invoice_number}`}
-                            title="Delete bill"
+                            aria-label={inv.pending ? `Discard draft bill for ${inv.buyer_name}` : `Delete bill ${inv.invoice_number}`}
+                            title={inv.pending ? "Discard draft" : "Delete bill"}
                             className="inline-flex h-10 w-10 items-center justify-center rounded-full text-lead hover:bg-terminal/10 hover:text-terminal-deep"
                           >
                             <Icon name="trash" className="h-5 w-5" />
@@ -221,15 +299,23 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
 
               {/* Phone cards */}
               <ul className="mt-4 space-y-2.5 md:hidden">
-                {shown.map((inv) => (
-                  <li key={inv.id} className="flex items-stretch gap-2">
-                    <Link href={`/sales/${inv.id}`} className="card card-hover flex min-w-0 flex-1 items-center gap-3 p-4">
+                {shown.map((inv) => {
+                  const body = (
+                    <>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
                           <span className="truncate font-semibold">{inv.buyer_name}</span>
                         </span>
                         <span className="mt-0.5 block text-sm text-lead">
-                          {inv.invoice_number} · {formatDay(inv.invoice_date)}
+                          {inv.pending ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              Pending sync <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                            </span>
+                          ) : (
+                            <>
+                              {inv.invoice_number} · {formatDay(inv.invoice_date)}
+                            </>
+                          )}
                         </span>
                         <span className="mt-1.5 block">
                           <PayBadge status={inv.payment_status} bill={inv.status} />
@@ -245,18 +331,29 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
                           </span>
                         )}
                       </span>
-                      <Icon name="chevron" className="h-4 w-4 text-lead/60" />
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => askDelete(inv)}
-                      aria-label={`Delete bill ${inv.invoice_number}`}
-                      className="card inline-flex w-12 shrink-0 items-center justify-center text-lead hover:bg-terminal/10 hover:text-terminal-deep"
-                    >
-                      <Icon name="trash" className="h-5 w-5" />
-                    </button>
-                  </li>
-                ))}
+                      {!inv.pending && <Icon name="chevron" className="h-4 w-4 text-lead/60" />}
+                    </>
+                  );
+                  return (
+                    <li key={inv.id} className="flex items-stretch gap-2">
+                      {inv.pending ? (
+                        <div className="card flex min-w-0 flex-1 items-center gap-3 p-4 opacity-80">{body}</div>
+                      ) : (
+                        <Link href={`/sales/${inv.id}`} className="card card-hover flex min-w-0 flex-1 items-center gap-3 p-4">
+                          {body}
+                        </Link>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => askDelete(inv)}
+                        aria-label={inv.pending ? `Discard draft bill for ${inv.buyer_name}` : `Delete bill ${inv.invoice_number}`}
+                        className="card inline-flex w-12 shrink-0 items-center justify-center text-lead hover:bg-terminal/10 hover:text-terminal-deep"
+                      >
+                        <Icon name="trash" className="h-5 w-5" />
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
               {visible.length >= 1000 && (
                 <p className="mt-3 text-sm text-lead">Showing the latest 1,000 bills.</p>
@@ -276,25 +373,28 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
             className="anim-pop w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
           >
             <h2 id="del-title" className="font-display text-2xl font-bold">
-              Delete {target.invoice_number}?
+              {target.pending ? "Discard this draft bill?" : `Delete ${target.invoice_number}?`}
             </h2>
             <p id="del-text" className="mt-2 text-lead">
-              This permanently deletes the bill for {target.buyer_name} ({formatRs(target.total_value)}) with all its
-              items and payments. It cannot be undone.
+              {target.pending
+                ? `This bill for ${target.buyer_name} (${formatRs(target.total_value)}) hasn't synced yet -- discarding it removes it from this device and puts its items back in stock. It cannot be undone.`
+                : `This permanently deletes the bill for ${target.buyer_name} (${formatRs(target.total_value)}) with all its items and payments. It cannot be undone.`}
             </p>
-            <label className="mt-4 flex items-start gap-3 rounded-xl bg-plate/70 px-3 py-3 text-[15px]">
-              <input
-                type="checkbox"
-                checked={restock}
-                onChange={(e) => setRestock(e.target.checked)}
-                disabled={delBusy}
-                className="mt-1 h-5 w-5"
-              />
-              <span>
-                <span className="block font-semibold">Put the items back in stock</span>
-                <span className="block text-lead">Turn this off only if the goods really left the shop.</span>
-              </span>
-            </label>
+            {!target.pending && (
+              <label className="mt-4 flex items-start gap-3 rounded-xl bg-plate/70 px-3 py-3 text-[15px]">
+                <input
+                  type="checkbox"
+                  checked={restock}
+                  onChange={(e) => setRestock(e.target.checked)}
+                  disabled={delBusy}
+                  className="mt-1 h-5 w-5"
+                />
+                <span>
+                  <span className="block font-semibold">Put the items back in stock</span>
+                  <span className="block text-lead">Turn this off only if the goods really left the shop.</span>
+                </span>
+              </label>
+            )}
             {delError && (
               <p role="alert" className="mt-4 rounded-xl bg-terminal/10 px-3 py-2 text-sm text-terminal-deep">
                 {delError}
@@ -305,7 +405,7 @@ export default function SalesClient({ invoices, initialFilter }: { invoices: Inv
                 Keep it
               </button>
               <button type="button" onClick={confirmDelete} disabled={delBusy} className="btn btn-danger">
-                {delBusy ? "Deleting" : "Delete bill"}
+                {delBusy ? "Deleting" : target.pending ? "Discard draft" : "Delete bill"}
               </button>
             </div>
           </div>
