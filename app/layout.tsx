@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Barlow, Barlow_Condensed } from "next/font/google";
 import RegisterSW from "@/components/RegisterSW";
+import SyncProvider from "@/components/SyncProvider";
 import "./globals.css";
 
 const barlow = Barlow({
@@ -50,6 +51,7 @@ export default function RootLayout({
       <body className="font-sans text-casing antialiased">
         {children}
         <RegisterSW />
+        <SyncProvider />
       </body>
     </html>
   );
