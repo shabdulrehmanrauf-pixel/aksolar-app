@@ -18,7 +18,7 @@ import {
   type CustomerFormValues,
 } from "@/lib/customers";
 import { focusFirstError } from "@/lib/formFocus";
-import { getBrowserClient } from "@/lib/supabase/lazy";
+import { offlineSave } from "@/lib/offline/dataLayer";
 import type { Customer } from "@/lib/types";
 
 export type CustomerLite = Pick<Customer, "id" | "name" | "phone">;
@@ -68,22 +68,20 @@ export default function CustomerForm({
 
     setSaving(true);
     setSaveError(null);
-    const supabase = await getBrowserClient();
     const payload = customerPayload(form);
-    const { error } = customer
-      ? await supabase.from("customers").update(payload).eq("id", customer.id)
-      : await supabase.from("customers").insert(payload);
+    const { error, code, offline } = await offlineSave("customers", customer?.id ?? null, payload);
 
     if (error) {
       setSaveError(
-        error.code === "42P01"
+        code === "42P01"
           ? "The customers table is missing. Run 02_customers.sql in Supabase, then try again."
-          : `Could not save. ${error.message}`
+          : `Could not save. ${error}`
       );
       setSaving(false);
       return;
     }
-    onSaved(customer ? "Changes saved." : "Customer added.");
+    const base = customer ? "Changes saved." : "Customer added.";
+    onSaved(offline ? `${base} Saved on this device -- will sync when you're back online.` : base);
   }
 
   return (

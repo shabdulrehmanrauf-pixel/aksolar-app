@@ -7,6 +7,9 @@ import Avatar from "@/components/Avatar";
 import Icon from "@/components/Icons";
 import PageHeader from "@/components/PageHeader";
 import Toast from "@/components/Toast";
+import { offlineDb } from "@/lib/offline/db";
+import { useLiveQuery } from "@/lib/offline/useLiveQuery";
+import { isBrowserOnline } from "@/lib/offline/net";
 import { customerMatches, formatPhone, formatRegNo, whatsappLink } from "@/lib/customers";
 import type { Customer, RegistrationType } from "@/lib/types";
 import CustomerForm from "./CustomerForm";
@@ -39,9 +42,24 @@ function ContactButtons({ phone, name }: { phone: string | null; name: string })
   );
 }
 
-export default function CustomersClient({ customers }: { customers: Customer[] }) {
+export default function CustomersClient({ customers: serverCustomers }: { customers: Customer[] }) {
   const router = useRouter();
   const wantsAdd = useSearchParams().get("add") === "1";
+
+  // Same rule as InventoryClient: only mirror server props into the offline
+  // cache when they are actually fresh (i.e. we're online right now).
+  useEffect(() => {
+    if (!isBrowserOnline() || serverCustomers.length === 0) return;
+    offlineDb.customers.bulkPut(serverCustomers).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverCustomers]);
+
+  const customers = useLiveQuery(
+    () => offlineDb.customers.toArray().then((rows) => rows.sort((a, b) => a.name.localeCompare(b.name))),
+    [],
+    serverCustomers
+  );
+
   const [query, setQuery] = useState("");
   const [type, setType] = useState<TypeFilter>("all");
   const [formOpen, setFormOpen] = useState(false);
@@ -92,9 +110,9 @@ export default function CustomersClient({ customers }: { customers: Customer[] }
   }
 
   function onSaved(message: string) {
+    // The live IndexedDB query already reflects the save; no network round trip needed.
     closeForm();
     setToast(message);
-    router.refresh();
   }
 
   const tabs: { value: TypeFilter; label: string; count: number }[] = [
