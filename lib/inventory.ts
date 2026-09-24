@@ -123,3 +123,89 @@ export function stockMatches(s: StockSearchable, query: string): boolean {
   const hay = stockHaystack(s);
   return words.every((w) => hay.includes(w));
 }
+
+/* ---------- Add / edit item rules (shared by the Add item form and the AI assistant) ---------- */
+
+/** Every field is text, exactly as typed in the Add item form. */
+export type ItemFormValues = {
+  category: Category;
+  brand: string;
+  model: string;
+  type: string;
+  voltage: string;
+  plates: string;
+  ah_rating: string;
+  wattage: string;
+  warranty_months: string;
+  cost_price: string;
+  sale_price: string;
+  quantity: string;
+  reorder_level: string;
+  hs_code: string;
+  uom: string;
+};
+
+export type ItemErrors = Partial<Record<keyof ItemFormValues, string>>;
+
+/** A money amount with up to 2 decimals. */
+export const MONEY_RE = /^\d+(\.\d{1,2})?$/;
+const WHOLE = /^\d+$/;
+
+export function validateItem(f: ItemFormValues): ItemErrors {
+  const e: ItemErrors = {};
+  if (!f.brand.trim()) e.brand = "Enter the brand.";
+  if (!f.model.trim()) e.model = "Enter the model.";
+  if (f.category === "battery" && !f.type) e.type = "Choose the battery type.";
+
+  const optionalDecimal = (key: keyof ItemFormValues, label: string) => {
+    const v = f[key].trim();
+    if (v && (!MONEY_RE.test(v) || Number(v) <= 0)) e[key] = `${label} must be a number above 0.`;
+  };
+  const optionalWhole = (key: keyof ItemFormValues, label: string) => {
+    const v = f[key].trim();
+    if (v && (!WHOLE.test(v) || Number(v) <= 0)) e[key] = `${label} must be a whole number above 0.`;
+  };
+
+  if (f.category === "battery") {
+    optionalDecimal("voltage", "Voltage");
+    optionalWhole("plates", "Plates");
+    optionalDecimal("ah_rating", "Ah rating");
+  }
+  if (f.category === "panel") optionalWhole("wattage", "Wattage");
+  optionalWhole("warranty_months", "Warranty");
+
+  if (!MONEY_RE.test(f.cost_price.trim())) e.cost_price = "Enter the cost price, for example 42000. Up to 2 decimals.";
+  if (!MONEY_RE.test(f.sale_price.trim())) e.sale_price = "Enter the sale price, for example 45000. Up to 2 decimals.";
+  if (!WHOLE.test(f.quantity.trim())) e.quantity = "Enter a whole number, 0 or more.";
+  if (!WHOLE.test(f.reorder_level.trim())) e.reorder_level = "Enter a whole number, 0 or more.";
+
+  const hs = f.hs_code.trim();
+  if (hs && !/^\d{4}\.\d{4}$/.test(hs)) e.hs_code = "Use 4 digits, a dot, then 4 digits. Example: 8507.2000";
+  if (!f.uom.trim()) e.uom = "Enter the unit of measure.";
+
+  return e;
+}
+
+/** The exact row that gets saved to the inventory table. Call only after validateItem() found no errors. */
+export function itemPayload(f: ItemFormValues) {
+  const num = (s: string) => (s.trim() === "" ? null : Number(s));
+  const isBattery = f.category === "battery";
+  const isPanel = f.category === "panel";
+  return {
+    category: f.category,
+    brand: f.brand.trim(),
+    model: f.model.trim(),
+    type: f.type.trim() || null,
+    voltage: isBattery ? num(f.voltage) : null,
+    plates: isBattery ? num(f.plates) : null,
+    ah_rating: isBattery ? num(f.ah_rating) : null,
+    wattage: isPanel ? num(f.wattage) : null,
+    warranty_months: num(f.warranty_months),
+    cost_price: Number(f.cost_price),
+    sale_price: Number(f.sale_price),
+    quantity: Number(f.quantity),
+    reorder_level: Number(f.reorder_level),
+    hs_code: f.hs_code.trim() || null,
+    uom: f.uom.trim(),
+  };
+}
