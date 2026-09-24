@@ -4,7 +4,7 @@ import { useState } from "react";
 import Icon from "@/components/Icons";
 import Sheet from "@/components/Sheet";
 import { focusFirstError } from "@/lib/formFocus";
-import { getBrowserClient } from "@/lib/supabase/lazy";
+import { offlineSave } from "@/lib/offline/dataLayer";
 import type { Category, InventoryItem } from "@/lib/types";
 import {
   ACCESSORY_TYPES,
@@ -226,18 +226,16 @@ export default function ItemForm({
 
     setSaving(true);
     setSaveError(null);
-    const supabase = await getBrowserClient();
     const payload = toPayload(form);
-    const { error } = item
-      ? await supabase.from("inventory").update(payload).eq("id", item.id)
-      : await supabase.from("inventory").insert(payload);
+    const { error, offline } = await offlineSave("inventory", item?.id ?? null, payload);
 
     if (error) {
-      setSaveError(`Could not save. ${error.message}`);
+      setSaveError(`Could not save. ${error}`);
       setSaving(false);
       return;
     }
-    onSaved(item ? "Changes saved." : "Item added to stock.");
+    const base = item ? "Changes saved." : "Item added to stock.";
+    onSaved(offline ? `${base} Saved on this device -- will sync when you're back online.` : base);
   }
 
   const typeOptions =
