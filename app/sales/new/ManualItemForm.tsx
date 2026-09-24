@@ -5,7 +5,7 @@ import Icon from "@/components/Icons";
 import Sheet from "@/components/Sheet";
 import { ACCESSORY_TYPES, BATTERY_TYPES, CATEGORIES, DEFAULT_UOM, PANEL_TYPES } from "@/lib/inventory";
 import { focusFirstError } from "@/lib/formFocus";
-import { getBrowserClient } from "@/lib/supabase/lazy";
+import { offlineSave } from "@/lib/offline/dataLayer";
 import type { Category } from "@/lib/types";
 import type { BillItem } from "./NewBill";
 
@@ -82,7 +82,6 @@ export default function ManualItemForm({
 
     setSaving(true);
     setSaveError(null);
-    const supabase = await getBrowserClient();
     const quantity = Number(form.quantity);
     const rate = Number(form.rate);
     const cost = form.cost_price.trim() ? Number(form.cost_price) : 0;
@@ -101,25 +100,32 @@ export default function ManualItemForm({
       uom: DEFAULT_UOM,
     };
 
-    const { data, error } = await supabase
-      .from("inventory")
-      .insert(payload)
-      .select(
-        "id,category,brand,model,type,voltage,plates,ah_rating,wattage,warranty_months,cost_price,sale_price,quantity"
-      )
-      .single();
+    // offlineSave writes to the local cache immediately (working even with no
+    // connection) and either saves to Supabase now or queues it for when the
+    // connection returns. Either way we already know the row's id.
+    const { error, id } = await offlineSave("inventory", null, payload);
 
-    if (error || !data) {
-      setSaveError(
-        error?.code === "42501"
-          ? "You do not have permission to add stock. Ask the owner to check your account."
-          : `Could not add this item. ${error?.message ?? "Please try again."}`
-      );
+    if (error) {
+      setSaveError(`Could not add this item. ${error}`);
       setSaving(false);
       return;
     }
 
-    onAdded(data as unknown as BillItem);
+    onAdded({
+      id,
+      category: payload.category,
+      brand: payload.brand,
+      model: payload.model,
+      type: payload.type,
+      voltage: null,
+      plates: null,
+      ah_rating: null,
+      wattage: null,
+      warranty_months: null,
+      cost_price: payload.cost_price,
+      sale_price: payload.sale_price,
+      quantity: payload.quantity,
+    } as BillItem);
   }
 
   return (
