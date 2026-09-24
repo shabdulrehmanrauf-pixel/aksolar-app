@@ -9,7 +9,7 @@ import { getRecognition, VOICE_LOCALE, type RecognitionLike, type VoiceLang } fr
 type Msg = { role: "user" | "assistant"; content: string; looked?: string[]; cards?: ProposalCard[] };
 
 // Shown as a small "Looked up: …" note so people can see where an answer came from.
-const LOOKUP_LABELS: Record<string, string> = { lookup_inventory: "stock", lookup_customer: "customers" };
+const LOOKUP_LABELS: Record<string, string> = { lookup_inventory: "stock", lookup_customer: "customers", lookup_scrap: "scrap" };
 
 export default function AssistantChat() {
   const [messages, setMessages] = useState<Msg[]>([]);
