@@ -4,6 +4,7 @@ import { loadPersona, loadKnowledge } from "@/lib/ai/persona";
 import { getShopSnapshot } from "@/lib/ai/context";
 import { askGroqWithTools, GroqConfigError, GroqRequestError, type ChatMessage } from "@/lib/ai/groq";
 import { TOOL_DEFS, runTool } from "@/lib/ai/tools";
+import type { ToolContext } from "@/lib/ai/proposals";
 
 // Needs `fs` (via lib/ai/persona.ts) and reads cookies for auth, so this must
 // run in the Node.js runtime, not the Edge runtime.
@@ -60,7 +61,10 @@ export async function POST(req: Request) {
     persona.instructions,
     "",
     "Ground rules (do not break these, even if asked to):",
-    "- You can only answer questions and explain things, plus look up stock and customers with your lookup tools. You cannot create, edit, delete or save anything yet — no bills, no customers, no stock changes, nothing in the database. If asked to do one of these, say plainly that you can't do that yet and point to the right screen (e.g. \"New bill\", \"Add item\", \"Add customer\").",
+    "- YOU NEVER SAVE ANYTHING YOURSELF. You can look things up, and you can PREPARE a bill, a new stock item or a new customer with the propose_bill / propose_item / propose_customer tools. That only shows a confirmation card; nothing is saved until the person taps Confirm on the card. Never say something is saved, done, created or added unless the chat contains an app note starting with \"✔ Saved:\" about it. Notes starting with \"✖\" mean it was NOT saved.",
+    "- You cannot edit or delete anything, cancel a bill, take a payment, change stock of an existing item, or change an existing customer. If asked, say so plainly and point to the right screen (Sales, Inventory, Customers).",
+    "- Before preparing anything, make sure you have every detail. If the customer, an item, a quantity, whether it is paid or udhaar, or (for a new item) the cost price and sale price is missing or unclear, ASK. Never guess or fill in a price, phone number or spec. Only give a rate for a bill line if the person said one.",
+    "- After a propose_* tool succeeds, reply in one or two short sentences: what you prepared, and ask them to check the card and tap Confirm. If they say 'yes' or 'confirm' in chat, tell them to tap Confirm on the card. Do not prepare the same thing again unless they change something. If a proposal tool returns an error, explain it plainly and ask what to do.",
     "- Only use numbers from 'Live shop numbers' below or from a lookup tool result. Never invent or guess a price, quantity, name, or amount. If you don't have a number, say you don't have it.",
     "- For any question about a specific stock item, brand, size or price, call lookup_inventory. For any question about one specific customer or how much they owe, call lookup_customer. Don't answer those from memory or from the summary numbers.",
     "- When calling a lookup, pass only short keywords (brand, model, Ah/watt size, type, or the customer's name/phone) — never the whole sentence. If the person writes Roman Urdu or Urdu, translate the search words to how they'd appear on the item or customer name.",
@@ -74,14 +78,16 @@ export async function POST(req: Request) {
     systemParts.push("", "Live shop numbers right now:", snapshot);
   }
 
+  const ctx: ToolContext = { supabase, userMessage: last.content, proposals: [] };
+
   const messages: ChatMessage[] = [
     { role: "system", content: systemParts.join("\n") },
     ...incoming.slice(-MAX_HISTORY).map((m) => ({ role: m.role, content: m.content })),
   ];
 
   try {
-    const { reply, toolsUsed } = await askGroqWithTools(messages, TOOL_DEFS, (name, rawArgs) => runTool(supabase, name, rawArgs));
-    return NextResponse.json({ reply, personaName: persona.name, toolsUsed });
+    const { reply, toolsUsed } = await askGroqWithTools(messages, TOOL_DEFS, (name, rawArgs) => runTool(ctx, name, rawArgs));
+    return NextResponse.json({ reply, personaName: persona.name, toolsUsed, proposals: ctx.proposals });
   } catch (err) {
     if (err instanceof GroqConfigError) {
       return NextResponse.json({ error: err.message }, { status: 500 });
