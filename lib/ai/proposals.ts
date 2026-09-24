@@ -116,7 +116,11 @@ function resolveStock(pool: StockRow[], query: string): { item: StockRow } | { e
     .slice(0, 4)
     .map((r) => stockName(r.s));
   return {
-    error: `No stock item matches "${query}".${close.length ? ` Closest names: ${close.join("; ")}.` : ""} Ask the person which item they mean. Do not guess.`,
+    error:
+      `No stock item matches "${query}".${close.length ? ` Closest names: ${close.join("; ")}.` : ""} ` +
+      `If none of those are right and this is a genuinely new item, don't just refuse the bill: ask the person for its ` +
+      `category, brand, model, spec, cost price and sale price, use propose_item to add it, and once they confirm that ` +
+      `card, make the bill again with the same item name. Never guess the price yourself.`,
   };
 }
 
