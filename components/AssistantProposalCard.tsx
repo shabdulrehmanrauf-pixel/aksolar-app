@@ -3,12 +3,35 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import Icon from "./Icons";
+import Icon, { type IconName } from "./Icons";
 import { formatRs } from "@/lib/format";
-import { methodLabel } from "@/lib/invoices";
+import { formatDay, methodLabel } from "@/lib/invoices";
 import { categoryLabel } from "@/lib/inventory";
 import { REGISTRATION_TYPES } from "@/lib/customers";
-import type { ActionDecision, ActionResponse, BillProposal, CustomerProposal, ItemProposal, ProposalCard } from "@/lib/ai/proposalTypes";
+import type {
+  ActionDecision,
+  ActionResponse,
+  BillProposal,
+  ChargingProposal,
+  ClaimProposal,
+  CustomerProposal,
+  ItemProposal,
+  Proposal,
+  ProposalCard,
+  ScrapAddProposal,
+  ScrapSaleProposal,
+} from "@/lib/ai/proposalTypes";
+
+/** Icon, heading and confirm-button words for each kind of proposal. */
+const KIND_META: Record<Proposal["kind"], { icon: IconName; title: string; confirm: string }> = {
+  create_bill: { icon: "receipt", title: "Bill ready to confirm", confirm: "Confirm bill" },
+  add_item: { icon: "box", title: "New item ready to confirm", confirm: "Add item" },
+  add_customer: { icon: "userplus", title: "New customer ready to confirm", confirm: "Add customer" },
+  add_scrap: { icon: "battery", title: "Scrap battery ready to confirm", confirm: "Add to scrap" },
+  sell_scrap: { icon: "banknote", title: "Scrap sale ready to confirm", confirm: "Confirm sale" },
+  create_charging: { icon: "bolt", title: "Charging slip ready to confirm", confirm: "Save slip" },
+  create_claim: { icon: "shield", title: "Battery claim ready to confirm", confirm: "Save claim" },
+};
 
 type Phase = "idle" | "working" | "saved" | "cancelled" | "edited" | "failed";
 
@@ -32,6 +55,7 @@ export default function AssistantProposalCard({
   const [result, setResult] = useState<ActionResponse | null>(null);
   const busy = useRef(false); // stops a double tap from sending two requests
   const p = card.proposal;
+  const meta = KIND_META[p.kind];
 
   async function decide(decision: ActionDecision) {
     if (busy.current) return;
@@ -77,11 +101,9 @@ export default function AssistantProposalCard({
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sun/20 text-casing">
-            <Icon name={p.kind === "create_bill" ? "receipt" : p.kind === "add_item" ? "box" : "userplus"} className="h-4 w-4" />
+            <Icon name={meta.icon} className="h-4 w-4" />
           </span>
-          <p className="font-semibold text-casing">
-            {p.kind === "create_bill" ? "Bill ready to confirm" : p.kind === "add_item" ? "New item ready to confirm" : "New customer ready to confirm"}
-          </p>
+          <p className="font-semibold text-casing">{meta.title}</p>
         </div>
         {phase === "idle" || working ? (
           <span className="shrink-0 rounded-full bg-plate px-2.5 py-1 text-xs font-semibold text-lead">Not saved yet</span>
@@ -98,6 +120,10 @@ export default function AssistantProposalCard({
         {p.kind === "create_bill" && <BillBody p={p} />}
         {p.kind === "add_item" && <ItemBody p={p} />}
         {p.kind === "add_customer" && <CustomerBody p={p} />}
+        {p.kind === "add_scrap" && <ScrapAddBody p={p} />}
+        {p.kind === "sell_scrap" && <ScrapSaleBody p={p} />}
+        {p.kind === "create_charging" && <ChargingBody p={p} />}
+        {p.kind === "create_claim" && <ClaimBody p={p} />}
       </div>
 
       {p.warnings.length > 0 && !finished && (
@@ -126,7 +152,7 @@ export default function AssistantProposalCard({
       {!finished && (
         <div className="mt-4 flex flex-wrap gap-2">
           <button type="button" className="btn btn-primary flex-1" onClick={() => decide("confirm")} disabled={working}>
-            {working ? "Saving…" : p.kind === "create_bill" ? "Confirm bill" : p.kind === "add_item" ? "Add item" : "Add customer"}
+            {working ? "Saving…" : meta.confirm}
           </button>
           {p.kind === "create_bill" && (
             <button type="button" className="btn btn-quiet" onClick={() => decide("edit")} disabled={working}>
@@ -217,6 +243,97 @@ function CustomerBody({ p }: { p: CustomerProposal }) {
         <Row label="Type" value={type} />
         {f.cnic_or_ntn && <Row label="CNIC / NTN" value={f.cnic_or_ntn} />}
       </div>
+    </div>
+  );
+}
+
+/** "Ali Traders" or "Ahmed (walk-in)" */
+function customerLine(c: { name: string; saved: boolean }) {
+  return c.saved ? c.name : `${c.name} (walk-in)`;
+}
+
+function ScrapAddBody({ p }: { p: ScrapAddProposal }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-base font-semibold text-casing">
+        {p.brand} {p.model}
+      </p>
+      {p.batteryType && <p className="text-xs text-lead">{p.batteryType}</p>}
+      <div className="mt-2 space-y-1">
+        <Row label="Quantity" value={String(p.quantity)} />
+        <Row label="Weight" value={p.weightKg != null ? `${p.weightKg} kg` : "Not weighed yet"} />
+        {p.batteryNumber && <Row label="Serial / plate" value={p.batteryNumber} />}
+        <Row label="From" value={p.customerName ?? "—"} />
+        <Row label="Received" value={formatDay(p.receivedDate)} />
+      </div>
+      {p.note && <p className="mt-2 text-xs text-lead">Note: {p.note}</p>}
+    </div>
+  );
+}
+
+function ScrapSaleBody({ p }: { p: ScrapSaleProposal }) {
+  return (
+    <div className="space-y-3">
+      <Row label="Buyer" value={p.buyerPhone ? `${p.buyerName} · ${p.buyerPhone}` : p.buyerName} />
+      <ul className="max-h-40 divide-y divide-line/60 overflow-y-auto rounded-xl border border-line/60">
+        {p.rows.map((r) => (
+          <li key={r.id} className="flex items-start justify-between gap-3 px-3 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-casing">{r.name}</p>
+              <p className="text-xs text-lead">{r.intakeNumber}</p>
+            </div>
+            <p className="shrink-0 text-sm text-lead">qty {r.qty}</p>
+          </li>
+        ))}
+      </ul>
+      <div className="space-y-1">
+        <Row label="Batteries" value={String(p.totalQty)} />
+        <Row label="Total weight" value={`${p.weightKg} kg`} />
+        <Row label="Rate per kg" value={formatRs(p.ratePerKg)} />
+        <Row label="Total amount" value={formatRs(p.total)} />
+        <Row label="Sale date" value={formatDay(p.saleDate)} />
+      </div>
+      {p.note && <p className="text-xs text-lead">Note: {p.note}</p>}
+    </div>
+  );
+}
+
+function ChargingBody({ p }: { p: ChargingProposal }) {
+  return (
+    <div className="space-y-1">
+      <Row label="Customer" value={customerLine(p.customer)} />
+      {p.customer.phone && <Row label="Phone" value={p.customer.phone} />}
+      <p className="pt-1 text-base font-semibold text-casing">
+        {p.brand} {p.model}
+      </p>
+      <div className="mt-2 space-y-1">
+        {p.batteryNumber && <Row label="Serial / plate" value={p.batteryNumber} />}
+        <Row label="Charging price" value={formatRs(p.price)} />
+        <Row label="Received" value={formatDay(p.receivedDate)} />
+        <Row label="Collect by" value={formatDay(p.dueDate)} />
+      </div>
+      {p.note && <p className="mt-2 text-xs text-lead">Note: {p.note}</p>}
+    </div>
+  );
+}
+
+function ClaimBody({ p }: { p: ClaimProposal }) {
+  return (
+    <div className="space-y-1">
+      <Row label="Customer" value={customerLine(p.customer)} />
+      {p.customer.phone && <Row label="Phone" value={p.customer.phone} />}
+      <p className="pt-1 text-base font-semibold text-casing">
+        {p.brand} {p.model}
+      </p>
+      <div className="mt-2 space-y-1">
+        {p.batteryNumber && <Row label="Serial / plate" value={p.batteryNumber} />}
+        <Row label="Original bill" value={p.originalInvoice ? `${p.originalInvoice.number} · ${formatDay(p.originalInvoice.date)}` : "—"} />
+        <Row label="Distributor" value={p.distributor ? `${p.distributor.name}${p.distributor.isNew ? " (new)" : ""}` : "Not chosen yet"} />
+        {p.claimAmount != null && <Row label="Claim amount" value={formatRs(p.claimAmount)} />}
+        {p.extraCharges != null && <Row label="Extra charges" value={formatRs(p.extraCharges)} />}
+        <Row label="Received" value={formatDay(p.receivedDate)} />
+      </div>
+      {p.note && <p className="mt-2 text-xs text-lead">Note: {p.note}</p>}
     </div>
   );
 }
