@@ -11,6 +11,7 @@ export const metadata: Metadata = { title: "More" };
 
 // Only shortcuts to screens that exist. Import/Export and Settings will be added with their phases.
 const SHORTCUTS: { href: string; label: string; hint: string; icon: IconName; tone: string }[] = [
+  { href: "/assistant", label: "Assistant", hint: "Ask about stock, sales or customers", icon: "sparkle", tone: "bg-sun/25 text-amber-800" },
   { href: "/sales/new", label: "New bill", hint: "Make a sale and take payment", icon: "receipt", tone: "bg-sun/25 text-amber-800" },
   { href: "/sales?filter=due", label: "Udhaar to collect", hint: "Bills that are not fully paid", icon: "banknote", tone: "bg-terminal/10 text-terminal" },
   { href: "/reports", label: "Reports", hint: "Sales, cash closing and best sellers", icon: "chart", tone: "bg-focus/10 text-focus" },
