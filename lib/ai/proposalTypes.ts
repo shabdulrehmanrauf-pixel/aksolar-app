@@ -54,7 +54,81 @@ export type CustomerProposal = {
   warnings: string[];
 };
 
-export type Proposal = BillProposal | ItemProposal | CustomerProposal;
+/** An old battery taken in on its own (not through a bill) — goes to the scrap pile. */
+export type ScrapAddProposal = {
+  kind: "add_scrap";
+  fingerprint: string;
+  brand: string;
+  model: string;
+  batteryType: string | null;
+  batteryNumber: string | null;
+  quantity: number;
+  weightKg: number | null;
+  customerName: string | null;
+  receivedDate: string; // YYYY-MM-DD
+  note: string | null;
+  warnings: string[];
+};
+
+/** A bulk, weighed sale of scrap batches to a kabari / scrap buyer. */
+export type ScrapSaleProposal = {
+  kind: "sell_scrap";
+  fingerprint: string;
+  rows: { id: string; intakeNumber: string; name: string; qty: number }[];
+  totalQty: number;
+  buyerName: string;
+  buyerPhone: string | null;
+  weightKg: number;
+  ratePerKg: number;
+  total: number;
+  saleDate: string; // YYYY-MM-DD
+  note: string | null;
+  warnings: string[];
+};
+
+/** Shared by the charging slip and the battery claim: a saved customer, or a walk-in. */
+export type SlipCustomer = { id: string | null; name: string; phone: string | null; saved: boolean };
+
+/** A customer's own battery dropped off to be charged. */
+export type ChargingProposal = {
+  kind: "create_charging";
+  fingerprint: string;
+  customer: SlipCustomer;
+  brand: string;
+  model: string;
+  batteryNumber: string | null;
+  price: number;
+  receivedDate: string; // YYYY-MM-DD
+  dueDate: string; // YYYY-MM-DD, shown for information; the database sets the real one
+  note: string | null;
+  warnings: string[];
+};
+
+/** A battery we sold, going back to its distributor under warranty. */
+export type ClaimProposal = {
+  kind: "create_claim";
+  fingerprint: string;
+  customer: SlipCustomer;
+  brand: string;
+  model: string;
+  batteryNumber: string | null;
+  originalInvoice: { id: string; number: string; date: string } | null;
+  distributor: { id: string | null; name: string; isNew: boolean } | null;
+  claimAmount: number | null;
+  extraCharges: number | null;
+  receivedDate: string; // YYYY-MM-DD
+  note: string | null;
+  warnings: string[];
+};
+
+export type Proposal =
+  | BillProposal
+  | ItemProposal
+  | CustomerProposal
+  | ScrapAddProposal
+  | ScrapSaleProposal
+  | ChargingProposal
+  | ClaimProposal;
 
 /** What the chat receives: the saved action's id plus the proposal to draw as a card. */
 export type ProposalCard = { id: string; proposal: Proposal };
