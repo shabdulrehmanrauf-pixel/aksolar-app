@@ -1,7 +1,7 @@
 /**
  * Phase 10, Part 3 — Propose -> Confirm -> Execute.
  *
- * The AI can only PREPARE things here. `buildBill/Item/CustomerProposal` check the
+ * The AI can only PREPARE things here. `buildBill/Item/Customer/ScrapAdd/ScrapSale/Charging/ClaimProposal` check the
  * request against real inventory and customer rows and save a proposal to the
  * ai_actions table. Nothing in the shop changes. A person then taps Confirm on the
  * card, which calls `decideAction()` below — the only place anything is written.
@@ -24,6 +24,7 @@ import {
   customerMatches,
   customerPayload,
   formatPhone,
+  isValidPhone,
   normalizePhone,
   validateCustomer,
   type CustomerFormValues,
@@ -39,18 +40,24 @@ import {
   validateItem,
   type ItemFormValues,
 } from "@/lib/inventory";
-import { friendlyInvoiceError, lineAmount, parseAmount, parseQty, round2, todayKarachi } from "@/lib/invoices";
+import { addDays, friendlyInvoiceError, lineAmount, parseAmount, parseQty, round2, todayKarachi } from "@/lib/invoices";
+import { CHARGING_HOLD_DAYS } from "@/lib/chargingJobs";
 import { formatRs } from "@/lib/format";
-import type { Category, Customer, InventoryItem, PaymentMethod } from "@/lib/types";
+import type { Category, Customer, InventoryItem, PaymentMethod, ScrapBatteryInventory } from "@/lib/types";
 import {
   PROPOSAL_MINUTES,
   type ActionDecision,
   type ActionResponse,
   type BillProposal,
+  type ChargingProposal,
+  type ClaimProposal,
   type CustomerProposal,
   type ItemProposal,
   type Proposal,
   type ProposalCard,
+  type ScrapAddProposal,
+  type ScrapSaleProposal,
+  type SlipCustomer,
 } from "@/lib/ai/proposalTypes";
 
 type Supa = Awaited<ReturnType<typeof createClient>>;
@@ -401,12 +408,404 @@ export async function buildCustomerProposal(ctx: ToolContext, args: Record<strin
   };
 }
 
+/* ================================================================ shared bits */
+/* Used by the scrap, charging-slip and battery-claim builders below. */
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A date the AI typed (YYYY-MM-DD), or today when none was given. Never in the future — same rule as the forms. */
+function pickDate(v: unknown, label: string): { date: string } | { error: string } {
+  const today = todayKarachi();
+  const raw = text(v, 20);
+  if (!raw) return { date: today };
+  if (!YMD.test(raw) || addDays(raw, 0) !== raw) return { error: `${label} must be a real date written as YYYY-MM-DD. Ask the person for the date.` };
+  if (raw > today) return { error: `${label} cannot be in the future (today is ${today}).` };
+  return { date: raw };
+}
+
+/** Same idea as tableMissing(), but the message says which SQL file to run. */
+function setupMessage(error: { code?: string; message?: string }, file: string, fallback: string): string {
+  return tableMissing(error) ? `The setup for this is missing. Run ${file} in Supabase (SQL Editor), then try again.` : error.message || fallback;
+}
+
+async function slipNumber(supabase: Supa, table: "charging_jobs" | "battery_claims", id: string): Promise<string> {
+  const column = table === "charging_jobs" ? "slip_number" : "claim_number";
+  const { data } = await supabase.from(table).select(column).eq("id", id).maybeSingle();
+  const value = data ? (data as unknown as Record<string, unknown>)[column] : null;
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * A saved customer (found by name/phone with the app's own search) or a walk-in.
+ * Zero matches is NOT an error here: a slip can be made for a walk-in, and the card says so.
+ * Several matches is an error — never guess which one.
+ */
+async function resolveSlipCustomer(
+  supabase: Supa,
+  args: Record<string, unknown>,
+  warnings: string[]
+): Promise<{ ok: true; customer: SlipCustomer } | { ok: false; error: string }> {
+  const custQuery = text(args.customer);
+  const walkInName = text(args.walk_in_name);
+  let customer: SlipCustomer;
+
+  if (custQuery) {
+    const { data, error } = await supabase.from("customers").select("id,name,phone,address,cnic_or_ntn,registration_type").order("name").limit(2000);
+    if (error) return { ok: false, error: "Couldn't read the customers right now. Try again." };
+    const found = ((data ?? []) as CustomerRow[]).filter((c) => customerMatches(c, custQuery));
+    let pick: CustomerRow | null = null;
+    if (found.length === 1) pick = found[0];
+    else if (found.length > 1) {
+      const exact = found.filter((c) => c.name.toLowerCase() === custQuery.toLowerCase());
+      if (exact.length === 1) pick = exact[0];
+      else {
+        const list = found.slice(0, 6).map((c) => `${c.name}${c.phone ? ` (${formatPhone(c.phone)})` : ""}`).join("; ");
+        return { ok: false, error: `"${custQuery}" matches ${found.length} saved customers: ${list}. Ask the person which one, then try again.` };
+      }
+    }
+    if (pick) customer = { id: pick.id, name: pick.name, phone: pick.phone ? formatPhone(pick.phone) : null, saved: true };
+    else {
+      customer = { id: null, name: custQuery, phone: null, saved: false };
+      warnings.push(`"${custQuery}" is not a saved customer, so this will be recorded under that name as a walk-in.`);
+    }
+  } else {
+    customer = { id: null, name: walkInName || "Walk-in customer", phone: null, saved: false };
+  }
+
+  if (!customer.id) {
+    const phone = normalizePhone(text(args.walk_in_phone, 30));
+    if (phone && !isValidPhone(phone)) return { ok: false, error: "That phone number isn't valid (10 to 15 digits, e.g. 0300 1234567). Ask the person to check it, or leave it out." };
+    if (phone) customer.phone = formatPhone(phone);
+  }
+  return { ok: true, customer };
+}
+
+/** What the RPCs get for the customer part of a slip. Same values the manual forms send. */
+function slipCustomerParams(c: SlipCustomer) {
+  return {
+    p_customer_id: c.id,
+    p_walkin_name: c.id ? null : c.name === "Walk-in customer" ? null : c.name,
+    p_walkin_phone: c.id ? null : c.phone ? normalizePhone(c.phone) || null : null,
+  };
+}
+
+/* ================================================================= add_scrap */
+
+export async function buildScrapAddProposal(_ctx: ToolContext, args: Record<string, unknown>): Promise<Built> {
+  const brand = text(args.brand);
+  const model = text(args.model);
+  if (!brand || !model) return fail("Enter the brand and model of the old battery. Ask the person for what's missing.");
+
+  const quantity = parseQty(numText(args.quantity));
+  if (quantity == null) return fail("Give a whole-number quantity of 1 or more. Ask the person how many old batteries.");
+
+  const weightGiven = numText(args.weight_kg);
+  let weightKg: number | null = null;
+  if (weightGiven !== "") {
+    weightKg = parseAmount(weightGiven);
+    if (weightKg == null || weightKg <= 0) return fail(`"${weightGiven}" isn't a valid weight in kg. Ask the person, or leave the weight out (batteries are usually weighed at sale time).`);
+  }
+
+  const date = pickDate(args.received_date, "The received date");
+  if ("error" in date) return fail(date.error);
+
+  const typeRaw = text(args.battery_type);
+  const typeNorm = typeRaw ? normalizeType(typeRaw) : "";
+  const batteryType = typeRaw ? (BATTERY_TYPES.includes(typeNorm) ? typeNorm : typeRaw) : null;
+
+  const batteryNumber = text(args.battery_number, 60) || null;
+  const customerName = text(args.customer_name) || null;
+  const note = text(args.note, 200) || null;
+
+  const warnings: string[] = [];
+  const fingerprint = ["scrap-add", brand.toLowerCase(), model.toLowerCase(), (batteryType ?? "").toLowerCase(), batteryNumber ?? "", quantity, date.date, (customerName ?? "").toLowerCase()].join("|");
+  const proposal: ScrapAddProposal = {
+    kind: "add_scrap",
+    fingerprint,
+    brand,
+    model,
+    batteryType,
+    batteryNumber,
+    quantity,
+    weightKg,
+    customerName,
+    receivedDate: date.date,
+    note,
+    warnings,
+  };
+
+  return {
+    ok: true,
+    proposal,
+    forModel: { battery: `${brand} ${model}`, type: batteryType ?? "not given", quantity, weight_kg: weightKg ?? "not weighed yet", from: customerName ?? "not given", received: date.date, warnings },
+  };
+}
+
+/* ================================================================ sell_scrap */
+
+type ScrapRow = Pick<ScrapBatteryInventory, "id" | "intake_number" | "brand" | "model" | "quantity">;
+
+export async function buildScrapSaleProposal(ctx: ToolContext, args: Record<string, unknown>): Promise<Built> {
+  const { data, error } = await ctx.supabase
+    .from("scrap_battery_inventory")
+    .select("id,intake_number,brand,model,quantity")
+    .eq("status", "in_stock")
+    .order("intake_number")
+    .limit(2000);
+  if (error) return fail(setupMessage(error, "07_scrap_battery.sql", "Couldn't read the scrap pile right now. Try again."));
+  const pile = (data ?? []) as ScrapRow[];
+  if (pile.length === 0) return fail("There is no scrap in stock to sell.");
+
+  /* ---- which batches ---- */
+  const sellAll = args.sell_all === true;
+  const wanted = Array.isArray(args.intake_numbers) ? (args.intake_numbers as unknown[]).map((v) => text(v, 40)).filter(Boolean) : [];
+  if (sellAll && wanted.length > 0) return fail('Pass either sell_all or intake_numbers, not both. Ask the person whether it is the whole pile or specific batches.');
+  if (!sellAll && wanted.length === 0) {
+    return fail("Which scrap should be sold? Use lookup_scrap to show what is in stock, then ask the person for the batch numbers, or whether the whole pile is going.");
+  }
+
+  let chosen: ScrapRow[];
+  if (sellAll) chosen = pile;
+  else {
+    chosen = [];
+    for (const number of wanted) {
+      const hit = pile.find((r) => r.intake_number.toLowerCase() === number.toLowerCase());
+      if (!hit) {
+        const some = pile.slice(0, 8).map((r) => r.intake_number).join(", ");
+        return fail(`No scrap batch numbered "${number}" is in stock. In stock: ${some}${pile.length > 8 ? ", …" : ""}. Ask the person which they mean.`);
+      }
+      if (!chosen.some((r) => r.id === hit.id)) chosen.push(hit);
+    }
+  }
+  if (chosen.length > 200) return fail("That is too many batches for one sale here. Sell them from the Scrap screen.");
+
+  /* ---- buyer + numbers ---- */
+  const buyerName = text(args.buyer_name);
+  if (!buyerName) return fail("Enter the buyer's name. Ask the person who is buying the scrap.");
+  const phoneRaw = normalizePhone(text(args.buyer_phone, 30));
+  if (phoneRaw && !isValidPhone(phoneRaw)) return fail("That buyer phone number isn't valid (10 to 15 digits). Ask the person to check it, or leave it out.");
+
+  const weightText = numText(args.total_weight_kg);
+  const weightKg = weightText === "" ? null : parseAmount(weightText);
+  if (weightKg == null || weightKg <= 0) return fail("Enter the total weight in kg (from the kabari's scale). Ask the person; never guess a weight.");
+
+  const rateText = numText(args.rate_per_kg);
+  const ratePerKg = rateText === "" ? null : parseAmount(rateText);
+  if (ratePerKg == null) return fail("Enter the rate per kg. Ask the person; never guess a rate.");
+
+  const date = pickDate(args.sale_date, "The sale date");
+  if ("error" in date) return fail(date.error);
+
+  const total = round2(weightKg * ratePerKg);
+  const warnings: string[] = [];
+  if (ratePerKg === 0) warnings.push("The rate is Rs 0 per kg, so this sale brings in no money.");
+
+  const rows = chosen.map((r) => ({ id: r.id, intakeNumber: r.intake_number, name: `${r.brand} ${r.model}`, qty: r.quantity }));
+  const totalQty = rows.reduce((s, r) => s + r.qty, 0);
+  const note = text(args.note, 200) || null;
+
+  const fingerprint = ["scrap-sale", rows.map((r) => r.id).sort().join(","), weightKg, ratePerKg, buyerName.toLowerCase()].join("|");
+  const proposal: ScrapSaleProposal = {
+    kind: "sell_scrap",
+    fingerprint,
+    rows,
+    totalQty,
+    buyerName,
+    buyerPhone: phoneRaw || null,
+    weightKg,
+    ratePerKg,
+    total,
+    saleDate: date.date,
+    note,
+    warnings,
+  };
+
+  return {
+    ok: true,
+    proposal,
+    forModel: {
+      buyer: buyerName,
+      batches: rows.length,
+      batteries: totalQty,
+      total_weight_kg: weightKg,
+      rate_per_kg: formatRs(ratePerKg),
+      total_amount: formatRs(total),
+      sale_date: date.date,
+      warnings,
+    },
+  };
+}
+
+/* ========================================================== create_charging */
+
+export async function buildChargingProposal(ctx: ToolContext, args: Record<string, unknown>): Promise<Built> {
+  const brand = text(args.battery_brand);
+  const model = text(args.battery_model);
+  if (!brand || !model) return fail("Enter the battery's brand and model. Ask the person for what's missing.");
+
+  const priceText = numText(args.price);
+  const price = priceText === "" ? null : parseAmount(priceText);
+  if (price == null) {
+    // Offer the shop's own suggested prices so the person can pick one — never choose one for them.
+    const { data: list } = await ctx.supabase.from("charging_price_list").select("label,price").order("price").limit(12);
+    const hint = (list ?? []).length
+      ? ` The shop's usual prices: ${(list ?? []).map((r) => `${r.label} ${formatRs(r.price as number)}`).join("; ")}. You may read these out as suggestions, but the person must say the price.`
+      : "";
+    return fail(`The charging price is missing or not a valid amount. Ask the person what to charge (Rs 0 is allowed).${hint}`);
+  }
+
+  const date = pickDate(args.received_date, "The received date");
+  if ("error" in date) return fail(date.error);
+
+  const warnings: string[] = [];
+  const who = await resolveSlipCustomer(ctx.supabase, args, warnings);
+  if (!who.ok) return fail(who.error);
+  const customer = who.customer;
+  if (!customer.id && !customer.phone) warnings.push("No phone number for this walk-in, so the shop can't call them when the battery is ready.");
+  if (price === 0) warnings.push("The charging price is Rs 0.");
+
+  const batteryNumber = text(args.battery_number, 60) || null;
+  const note = text(args.note, 200) || null;
+  const dueDate = addDays(date.date, CHARGING_HOLD_DAYS);
+
+  const fingerprint = ["charging", customer.id ?? `walkin:${customer.name.toLowerCase()}`, brand.toLowerCase(), model.toLowerCase(), batteryNumber ?? "", price, date.date].join("|");
+  const proposal: ChargingProposal = { kind: "create_charging", fingerprint, customer, brand, model, batteryNumber, price, receivedDate: date.date, dueDate, note, warnings };
+
+  return {
+    ok: true,
+    proposal,
+    forModel: {
+      customer: customer.name + (customer.saved ? "" : " (walk-in, not saved)"),
+      battery: `${brand} ${model}`,
+      battery_number: batteryNumber ?? "none",
+      charging_price: formatRs(price),
+      received: date.date,
+      collect_by: dueDate,
+      warnings,
+    },
+  };
+}
+
+/* ============================================================= create_claim */
+
+export async function buildClaimProposal(ctx: ToolContext, args: Record<string, unknown>): Promise<Built> {
+  const { supabase } = ctx;
+  const brand = text(args.battery_brand);
+  const model = text(args.battery_model);
+  if (!brand || !model) return fail("Enter the battery's brand and model. Ask the person for what's missing.");
+
+  const date = pickDate(args.received_date, "The received date");
+  if ("error" in date) return fail(date.error);
+
+  const money = (v: unknown, label: string): { value: number | null } | { error: string } => {
+    const t = numText(v);
+    if (t === "") return { value: null };
+    const n = parseAmount(t);
+    return n == null ? { error: `"${t}" isn't a valid ${label} (numbers only, up to 2 decimals). Ask the person, or leave it out.` } : { value: n };
+  };
+  const claimAmount = money(args.claim_amount, "claim amount");
+  if ("error" in claimAmount) return fail(claimAmount.error);
+  const extraCharges = money(args.extra_charges, "amount for extra charges");
+  if ("error" in extraCharges) return fail(extraCharges.error);
+
+  const warnings: string[] = [];
+  const who = await resolveSlipCustomer(supabase, args, warnings);
+  if (!who.ok) return fail(who.error);
+  const customer = who.customer;
+  if (!customer.id && !customer.phone) warnings.push("No phone number for this walk-in customer.");
+
+  /* ---- original bill (optional): found by bill number only ---- */
+  let originalInvoice: ClaimProposal["originalInvoice"] = null;
+  const billQuery = text(args.original_bill, 40).replace(/[%_,()]/g, "");
+  if (billQuery) {
+    const { data, error } = await supabase
+      .from("invoice_balances")
+      .select("id,invoice_number,invoice_date")
+      .ilike("invoice_number", `%${billQuery}%`)
+      .neq("status", "Cancelled")
+      .order("created_at", { ascending: false })
+      .limit(6);
+    if (error) return fail("Couldn't search the bills right now. Try again.");
+    const bills = (data ?? []) as { id: string; invoice_number: string; invoice_date: string }[];
+    const pick = bills.length === 1 ? bills[0] : bills.find((b) => b.invoice_number.toLowerCase() === billQuery.toLowerCase());
+    if (!pick && bills.length > 1) {
+      return fail(`"${billQuery}" matches ${bills.length} bills: ${bills.map((b) => b.invoice_number).join(", ")}. Ask the person which bill number, then try again.`);
+    }
+    if (!pick) return fail(`No bill matches the number "${billQuery}". Ask the person to check the bill number, or leave the original bill out.`);
+    originalInvoice = { id: pick.id, number: pick.invoice_number, date: pick.invoice_date };
+  }
+
+  /* ---- distributor (optional): an existing one, or a new name the person gave ---- */
+  let distributor: ClaimProposal["distributor"] = null;
+  const distQuery = text(args.distributor);
+  if (distQuery) {
+    const { data, error } = await supabase.from("distributors").select("id,name").order("name").limit(500);
+    if (error) return fail(setupMessage(error, "06_battery_services.sql", "Couldn't read the distributors right now. Try again."));
+    const q = distQuery.toLowerCase();
+    const all = (data ?? []) as { id: string; name: string }[];
+    const exact = all.filter((d) => d.name.trim().toLowerCase() === q);
+    const partial = all.filter((d) => d.name.toLowerCase().includes(q) || q.includes(d.name.trim().toLowerCase()));
+    const found = exact.length === 1 ? exact : partial;
+    if (found.length === 1) distributor = { id: found[0].id, name: found[0].name, isNew: false };
+    else if (found.length > 1) {
+      return fail(`"${distQuery}" matches ${found.length} distributors: ${found.slice(0, 6).map((d) => d.name).join("; ")}. Ask the person which one, then try again.`);
+    } else {
+      distributor = { id: null, name: distQuery, isNew: true };
+      warnings.push(`"${distQuery}" is not in your distributor list, so it will be added as a new distributor.`);
+    }
+  }
+
+  const batteryNumber = text(args.battery_number, 60) || null;
+  const note = text(args.note, 200) || null;
+  const fingerprint = ["claim", customer.id ?? `walkin:${customer.name.toLowerCase()}`, brand.toLowerCase(), model.toLowerCase(), batteryNumber ?? "", date.date].join("|");
+  const proposal: ClaimProposal = {
+    kind: "create_claim",
+    fingerprint,
+    customer,
+    brand,
+    model,
+    batteryNumber,
+    originalInvoice,
+    distributor,
+    claimAmount: claimAmount.value,
+    extraCharges: extraCharges.value,
+    receivedDate: date.date,
+    note,
+    warnings,
+  };
+
+  return {
+    ok: true,
+    proposal,
+    forModel: {
+      customer: customer.name + (customer.saved ? "" : " (walk-in, not saved)"),
+      battery: `${brand} ${model}`,
+      battery_number: batteryNumber ?? "none",
+      original_bill: originalInvoice?.number ?? "none",
+      distributor: distributor ? distributor.name + (distributor.isNew ? " (new)" : "") : "not chosen yet",
+      claim_amount: claimAmount.value != null ? formatRs(claimAmount.value) : "not set",
+      extra_charges: extraCharges.value != null ? formatRs(extraCharges.value) : "none",
+      received: date.date,
+      warnings,
+    },
+  };
+}
+
 /* ======================================================== save + show a card */
 
 type Builder = (ctx: ToolContext, args: Record<string, unknown>) => Promise<Built>;
 
 const MODEL_INSTRUCTION =
   "NOTHING HAS BEEN SAVED. A confirmation card is now on the person's screen. In one or two short sentences say what you prepared and ask them to check the card and tap Confirm (or Edit / Cancel). Never say it is saved, done or created. If they reply 'yes' or 'confirm' in chat, tell them to tap Confirm on the card. Do not prepare it again.";
+
+/** Kinds that could be saved twice by accident get a warning if an identical one was confirmed in the last 30 minutes. */
+const REPEAT_WARNING: Partial<Record<Proposal["kind"], string>> = {
+  create_bill: "An identical bill was saved in the last 30 minutes. Confirm only if this is a second, separate sale.",
+  add_scrap: "An identical scrap battery was added in the last 30 minutes. Confirm only if this is a second, separate battery.",
+  create_charging: "An identical charging slip was saved in the last 30 minutes. Confirm only if this is a second, separate battery.",
+  create_claim: "An identical battery claim was saved in the last 30 minutes. Confirm only if this is a second, separate claim.",
+};
 
 /** Builds, de-duplicates, logs and queues one proposal card. Returns the JSON string the AI sees. */
 export async function proposeAction(ctx: ToolContext, build: Builder, args: Record<string, unknown>): Promise<string> {
@@ -443,8 +842,8 @@ export async function proposeAction(ctx: ToolContext, build: Builder, args: Reco
   if (rows.some((r) => r.status === "executing")) {
     return JSON.stringify({ error: "That exact action is being saved right now. Tell the person to wait a moment and check the result." });
   }
-  if (rows.some((r) => r.status === "confirmed") && proposal.kind === "create_bill") {
-    proposal.warnings.push("An identical bill was saved in the last 30 minutes. Confirm only if this is a second, separate sale.");
+  if (rows.some((r) => r.status === "confirmed") && REPEAT_WARNING[proposal.kind]) {
+    proposal.warnings.push(REPEAT_WARNING[proposal.kind] as string);
   }
 
   const { data: id, error } = await ctx.supabase.rpc("ai_log_proposal", {
@@ -563,6 +962,151 @@ export async function decideAction(supabase: Supa, id: string, decision: ActionD
         message: `${payload.brand} ${payload.model} added to stock — ${payload.quantity} in stock at ${formatRs(payload.sale_price)}.`,
         link: `/inventory?q=${encodeURIComponent(`${payload.brand} ${payload.model}`)}`,
         linkLabel: "Open inventory",
+      };
+    }
+
+    if (proposal.kind === "add_scrap") {
+      const p = proposal;
+      if (p.receivedDate > todayKarachi()) {
+        const message = "The received date cannot be in the future.";
+        await finish("failed", null, message);
+        return { ok: false, message: `The scrap battery was not added. ${message}` };
+      }
+      sent = {
+        p_invoice_id: null,
+        p_customer_id: null,
+        p_customer_name: p.customerName,
+        p_brand: p.brand,
+        p_model: p.model,
+        p_battery_type: p.batteryType,
+        p_battery_number: p.batteryNumber,
+        p_quantity: p.quantity,
+        p_estimated_weight_kg: p.weightKg,
+        p_note: p.note,
+        p_received_date: p.receivedDate,
+      };
+      const { data, error } = await supabase.rpc("record_scrap_intake", sent);
+      if (error || !data) {
+        const message = error ? setupMessage(error, "07_scrap_battery.sql", "Unknown error.") : "The scrap battery was not saved.";
+        await finish("failed", null, message);
+        return { ok: false, message: `The scrap battery was not added. ${message}` };
+      }
+      await finish("confirmed", { intake: data as unknown as string }, null);
+      return {
+        ok: true,
+        message: `${p.quantity} × ${p.brand} ${p.model} added to the scrap pile.`,
+        link: "/scrap",
+        linkLabel: "Open scrap",
+      };
+    }
+
+    if (proposal.kind === "sell_scrap") {
+      const p = proposal;
+      const ids = p.rows.map((r) => r.id);
+      // The pile may have changed since the card was made: every batch must still be in stock.
+      const { data: still, error: stillError } = await supabase.from("scrap_battery_inventory").select("id").in("id", ids).eq("status", "in_stock");
+      if (stillError) {
+        const message = "Couldn't check the scrap pile.";
+        await finish("failed", null, message);
+        return { ok: false, message: `The scrap was not sold. ${message}` };
+      }
+      if ((still ?? []).length !== ids.length) {
+        const message = "Some of these batches were already sold or removed since the card was made. Ask me to prepare it again.";
+        await finish("failed", null, message);
+        return { ok: false, message: `The scrap was not sold. ${message}` };
+      }
+      sent = {
+        p_intake_ids: ids,
+        p_buyer_name: p.buyerName,
+        p_buyer_phone: p.buyerPhone,
+        p_total_weight_kg: p.weightKg,
+        p_rate_per_kg: p.ratePerKg,
+        p_sale_date: p.saleDate,
+        p_note: p.note,
+      };
+      const { data, error } = await supabase.rpc("sell_scrap", sent);
+      if (error || !data) {
+        const message = error ? setupMessage(error, "07_scrap_battery.sql", "Unknown error.") : "The sale was not saved.";
+        await finish("failed", null, message);
+        return { ok: false, message: `The scrap was not sold. ${message}` };
+      }
+      const saleId = typeof data === "string" && UUID.test(data) ? data : null;
+      await finish("confirmed", { sale: data as unknown as string }, null);
+      return {
+        ok: true,
+        message: `Scrap sold to ${p.buyerName} — ${p.totalQty} ${p.totalQty === 1 ? "battery" : "batteries"}, ${p.weightKg} kg at ${formatRs(p.ratePerKg)}/kg = ${formatRs(p.total)}.`,
+        link: saleId ? `/print/scrap/${saleId}` : "/scrap",
+        linkLabel: saleId ? "Open sale slip" : "Open scrap",
+      };
+    }
+
+    if (proposal.kind === "create_charging") {
+      const p = proposal;
+      if (p.receivedDate > todayKarachi()) {
+        const message = "The received date cannot be in the future.";
+        await finish("failed", null, message);
+        return { ok: false, message: `The charging slip was not saved. ${message}` };
+      }
+      sent = {
+        ...slipCustomerParams(p.customer),
+        p_battery_brand: p.brand,
+        p_battery_model: p.model,
+        p_battery_number: p.batteryNumber,
+        p_price: p.price,
+        p_note: p.note,
+        p_received_date: p.receivedDate,
+      };
+      const { data, error } = await supabase.rpc("create_charging_job", sent);
+      if (error || !data) {
+        const message = error ? setupMessage(error, "06_battery_services.sql", "Unknown error.") : "The slip was not saved.";
+        await finish("failed", null, message);
+        return { ok: false, message: `The charging slip was not saved. ${message}` };
+      }
+      const id = data as unknown as string;
+      const number = await slipNumber(supabase, "charging_jobs", id);
+      await finish("confirmed", { charging_job_id: id, slip_number: number }, null);
+      return {
+        ok: true,
+        message: `Charging slip ${number} saved for ${p.customer.name} — ${p.brand} ${p.model}, ${formatRs(p.price)}.`,
+        link: `/print/charging/${id}`,
+        linkLabel: "Open slip",
+      };
+    }
+
+    if (proposal.kind === "create_claim") {
+      const p = proposal;
+      if (p.receivedDate > todayKarachi()) {
+        const message = "The received date cannot be in the future.";
+        await finish("failed", null, message);
+        return { ok: false, message: `The battery claim was not saved. ${message}` };
+      }
+      sent = {
+        ...slipCustomerParams(p.customer),
+        p_battery_brand: p.brand,
+        p_battery_model: p.model,
+        p_battery_number: p.batteryNumber,
+        p_original_invoice_id: p.originalInvoice?.id ?? null,
+        p_claim_amount: p.claimAmount,
+        p_extra_charges: p.extraCharges,
+        p_note: p.note,
+        p_received_date: p.receivedDate,
+        p_distributor_id: p.distributor && !p.distributor.isNew ? p.distributor.id : null,
+        p_new_distributor_name: p.distributor?.isNew ? p.distributor.name : null,
+      };
+      const { data, error } = await supabase.rpc("create_battery_claim", sent);
+      if (error || !data) {
+        const message = error ? setupMessage(error, "06_battery_services.sql", "Unknown error.") : "The claim was not saved.";
+        await finish("failed", null, message);
+        return { ok: false, message: `The battery claim was not saved. ${message}` };
+      }
+      const id = data as unknown as string;
+      const number = await slipNumber(supabase, "battery_claims", id);
+      await finish("confirmed", { claim_id: id, claim_number: number }, null);
+      return {
+        ok: true,
+        message: `Battery claim ${number} saved for ${p.customer.name} — ${p.brand} ${p.model}.`,
+        link: `/print/claim/${id}`,
+        linkLabel: "Open claim slip",
       };
     }
 
