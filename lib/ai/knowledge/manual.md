@@ -13,7 +13,7 @@ desktop, installable as an app (PWA), and keeps working with no internet
 - **Reports** — sales, cash closing, best sellers, current stock value and udhaar, for Today/Yesterday/This month/quarter/year.
 - **Battery services** — charging slips (customer's own battery brought in for charging) and battery claims (a battery you sold going back to the distributor under warranty).
 - **Scrap** — old batteries taken in exchange, tracked and later sold by weight.
-- **Assistant** — this chat. Can look up real stock/customer numbers and prepare (not save) a bill, item or customer for you to confirm.
+- **Assistant** — this chat. Can look up real stock, customer and scrap numbers and prepare (not save) a bill, item, customer, scrap battery, scrap sale, charging slip or battery claim for you to confirm.
 - **More** (phone) / sidebar (desktop) — shortcuts to everything above, plus Install app and Sign out.
 
 ## How to make a sale (New bill)
@@ -46,4 +46,4 @@ If the internet drops, the app keeps working from what's already loaded on that 
 - **Cash received** — payments taken today; not the same as cash physically in the drawer.
 
 ## What the assistant itself can and can't do
-It can answer questions using real numbers (never guesses), and it can **prepare** a bill, a new stock item, or a new customer — but never saves anything itself. A person always checks the card it shows and taps Confirm before anything is actually created. It cannot edit or delete a bill, change an existing item's price/stock, or edit a customer — those are done from their own screens (Inventory, Customers, Sales).
+It can answer questions using real numbers (never guesses), and it can **prepare** a bill, a new stock item, a new customer, an old battery for the scrap pile, a scrap sale, a charging slip or a battery claim — but never saves anything itself. A person always checks the card it shows and taps Confirm before anything is actually created. For a scrap sale it needs the batch numbers (or the whole pile), the buyer, the total weight and the rate per kg; for a charging slip it needs the price you state; a claim only needs the battery, and the bill number, distributor and amounts are optional. It cannot edit or delete a bill, change an existing item's price/stock, edit a customer, change a charging slip, or move a battery claim to its next status — those are done from their own screens (Inventory, Customers, Sales, Scrap, Battery services).
