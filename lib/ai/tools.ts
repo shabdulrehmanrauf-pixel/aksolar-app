@@ -1,7 +1,8 @@
 /**
  * Tools the AI assistant can ask the server to run.
- *  - Part 2: two READ-ONLY lookups (one inventory item, one customer).
- *  - Part 3: three "propose_*" tools. These only PREPARE a bill / item / customer:
+ *  - Part 2: READ-ONLY lookups (inventory item, customer, and — for selling scrap — the scrap pile).
+ *  - Part 3: "propose_*" tools. These only PREPARE a bill / item / customer / scrap intake /
+ *    scrap sale / charging slip / battery claim:
  *    they validate it and save a proposal (lib/ai/proposals.ts). Nothing is written to
  *    the shop's data until a person taps Confirm on the card in the chat.
  *
@@ -24,8 +25,19 @@ import { categoryLabel, isLow, isOut, itemSpecs, stockMatches, stockMatchScore }
 import { formatDay, round2 } from "@/lib/invoices";
 import { formatRs } from "@/lib/format";
 import type { ToolDef } from "@/lib/ai/groq";
-import { buildBillProposal, buildCustomerProposal, buildItemProposal, proposeAction, type ToolContext } from "@/lib/ai/proposals";
-import type { Category, Customer, InventoryItem } from "@/lib/types";
+import {
+  buildBillProposal,
+  buildChargingProposal,
+  buildClaimProposal,
+  buildCustomerProposal,
+  buildItemProposal,
+  buildScrapAddProposal,
+  buildScrapSaleProposal,
+  proposeAction,
+  type ToolContext,
+} from "@/lib/ai/proposals";
+import { scrapIntakeMatches } from "@/lib/scrapBattery";
+import type { Category, Customer, InventoryItem, ScrapBatteryInventory } from "@/lib/types";
 
 type Supa = Awaited<ReturnType<typeof createClient>>;
 
@@ -142,6 +154,114 @@ export const TOOL_DEFS: ToolDef[] = [
           cnic_or_ntn: { type: "string", description: "13-digit CNIC or 7-digit NTN. Required if registered." },
         },
         required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "lookup_scrap",
+      description:
+        "Show the old (scrap) batteries currently in stock, with their batch numbers, so you can tell the person what is there or which batches to sell. Use before propose_scrap_sale unless the person already gave exact batch numbers. Pass a short keyword to narrow it (brand, customer, batch number), or nothing to see the newest batches.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Optional short keywords, e.g. 'osaka' or 'SCR-0004'." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_scrap_add",
+      description:
+        "Prepare an OLD battery to add to the scrap pile (a battery that came in on its own, not through a bill), for the person to confirm. This does NOT save anything. Brand, model and quantity are required: ask if missing. Weight is optional (usually weighed when sold).",
+      parameters: {
+        type: "object",
+        properties: {
+          brand: { type: "string" },
+          model: { type: "string" },
+          quantity: { type: "integer", description: "How many old batteries. Whole number, 1 or more." },
+          battery_type: { type: "string", description: "Optional: Lithium, Tubular, Lead-acid or Dry." },
+          battery_number: { type: "string", description: "Optional serial or plate number." },
+          weight_kg: { type: "number", description: "Optional total weight in kg, ONLY if the person said it." },
+          customer_name: { type: "string", description: "Optional: who brought it in." },
+          received_date: { type: "string", description: "YYYY-MM-DD. Leave out for today." },
+          note: { type: "string" },
+        },
+        required: ["brand", "model", "quantity"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_scrap_sale",
+      description:
+        "Prepare a sale of scrap batteries to a scrap buyer (kabari), for the person to confirm. This does NOT save anything. Needs: which batches (intake_numbers from lookup_scrap, or sell_all true for the whole pile), the buyer's name, the total weight in kg and the rate per kg. Never guess a weight or a rate: ask. The total is calculated by the app.",
+      parameters: {
+        type: "object",
+        properties: {
+          intake_numbers: { type: "array", items: { type: "string" }, description: "Batch numbers being sold, exactly as shown by lookup_scrap." },
+          sell_all: { type: "boolean", description: "True only if the person said to sell the whole scrap pile." },
+          buyer_name: { type: "string" },
+          buyer_phone: { type: "string" },
+          total_weight_kg: { type: "number", description: "Total weight of the lot in kg. Required." },
+          rate_per_kg: { type: "number", description: "Price per kg. Required." },
+          sale_date: { type: "string", description: "YYYY-MM-DD. Leave out for today." },
+          note: { type: "string" },
+        },
+        required: ["buyer_name", "total_weight_kg", "rate_per_kg"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_charging_slip",
+      description:
+        "Prepare a charging slip (a customer's OWN battery dropped off to be charged) for the person to confirm. This does NOT save anything. Needs the battery brand and model and the charging price the person states: ask if missing, never guess. The customer can be a saved customer or a walk-in.",
+      parameters: {
+        type: "object",
+        properties: {
+          customer: { type: "string", description: "Saved customer's name or phone. Leave out for a walk-in." },
+          walk_in_name: { type: "string", description: "Optional name for a walk-in who is not saved." },
+          walk_in_phone: { type: "string", description: "Optional phone for a walk-in." },
+          battery_brand: { type: "string" },
+          battery_model: { type: "string" },
+          battery_number: { type: "string", description: "Optional serial or plate number." },
+          price: { type: "number", description: "Charging price in Rs. Required; 0 is allowed." },
+          received_date: { type: "string", description: "YYYY-MM-DD. Leave out for today." },
+          note: { type: "string" },
+        },
+        required: ["battery_brand", "battery_model", "price"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_battery_claim",
+      description:
+        "Prepare a battery warranty claim (a battery the shop SOLD, coming back to be sent to its distributor) for the person to confirm. This does NOT save anything. Needs the battery brand and model. The original bill number, distributor, claim amount and extra charges are optional: only pass what the person said. The customer can be a saved customer or a walk-in.",
+      parameters: {
+        type: "object",
+        properties: {
+          customer: { type: "string", description: "Saved customer's name or phone. Leave out for a walk-in." },
+          walk_in_name: { type: "string", description: "Optional name for a walk-in who is not saved." },
+          walk_in_phone: { type: "string", description: "Optional phone for a walk-in." },
+          battery_brand: { type: "string" },
+          battery_model: { type: "string" },
+          battery_number: { type: "string", description: "Optional serial or plate number." },
+          original_bill: { type: "string", description: "Optional bill number of the original sale." },
+          distributor: { type: "string", description: "Optional distributor name." },
+          claim_amount: { type: "number", description: "Optional: value of the replacement to recover from the distributor." },
+          extra_charges: { type: "number", description: "Optional: acid, service charges etc. collected from the customer." },
+          received_date: { type: "string", description: "YYYY-MM-DD. Leave out for today." },
+          note: { type: "string" },
+        },
+        required: ["battery_brand", "battery_model"],
       },
     },
   },
@@ -295,6 +415,51 @@ async function lookupCustomer(supabase: Supa, args: Record<string, unknown>): Pr
   });
 }
 
+/* -------------------------------------------------------------------- scrap */
+
+type ScrapLookupRow = Pick<
+  ScrapBatteryInventory,
+  "intake_number" | "brand" | "model" | "battery_type" | "battery_number" | "quantity" | "estimated_weight_kg" | "customer_name" | "note" | "received_date"
+>;
+
+const MAX_SCRAP_RESULTS = 15;
+
+async function lookupScrap(supabase: Supa, args: Record<string, unknown>): Promise<string> {
+  const query = cleanQuery(args.query);
+  const { data, error } = await supabase
+    .from("scrap_battery_inventory")
+    .select("intake_number,brand,model,battery_type,battery_number,quantity,estimated_weight_kg,customer_name,note,received_date")
+    .eq("status", "in_stock")
+    .order("received_date", { ascending: false })
+    .order("intake_number", { ascending: false })
+    .limit(2000);
+  if (error) return toolError("Couldn't read the scrap pile right now.");
+
+  const all = (data ?? []) as ScrapLookupRow[];
+  if (all.length === 0) return JSON.stringify({ batches_in_stock: 0, note: "There is no scrap in stock." });
+
+  const matched = query ? all.filter((r) => scrapIntakeMatches(r as ScrapBatteryInventory, query)) : all;
+  if (matched.length === 0) return JSON.stringify({ total_matches: 0, note: "No scrap batch matches that. Say you couldn't find it." });
+
+  const weighed = matched.filter((r) => r.estimated_weight_kg != null);
+  return JSON.stringify({
+    total_matches: matched.length,
+    showing: Math.min(matched.length, MAX_SCRAP_RESULTS),
+    batteries_in_matches: matched.reduce((sum, r) => sum + r.quantity, 0),
+    ...(weighed.length > 0 ? { estimated_weight_kg_where_known: round2(weighed.reduce((sum, r) => sum + (r.estimated_weight_kg ?? 0), 0)) } : {}),
+    batches: matched.slice(0, MAX_SCRAP_RESULTS).map((r) => ({
+      batch_number: r.intake_number,
+      name: `${r.brand} ${r.model}`,
+      type: r.battery_type ?? "not given",
+      quantity: r.quantity,
+      received: formatDay(r.received_date),
+      ...(r.customer_name ? { from: r.customer_name } : {}),
+      ...(r.estimated_weight_kg != null ? { weight_kg: r.estimated_weight_kg } : {}),
+    })),
+    ...(matched.length > MAX_SCRAP_RESULTS ? { note: `Only the newest ${MAX_SCRAP_RESULTS} batches are listed; the totals cover all ${matched.length}.` } : {}),
+  });
+}
+
 /* ------------------------------------------------------------------ runner */
 
 /** Runs one tool call from the model. Never throws — problems come back as a JSON error string. */
@@ -307,6 +472,11 @@ export async function runTool(ctx: ToolContext, name: string, rawArgs: string): 
     if (name === "propose_bill") return await proposeAction(ctx, buildBillProposal, args);
     if (name === "propose_item") return await proposeAction(ctx, buildItemProposal, args);
     if (name === "propose_customer") return await proposeAction(ctx, buildCustomerProposal, args);
+    if (name === "lookup_scrap") return await lookupScrap(ctx.supabase, args);
+    if (name === "propose_scrap_add") return await proposeAction(ctx, buildScrapAddProposal, args);
+    if (name === "propose_scrap_sale") return await proposeAction(ctx, buildScrapSaleProposal, args);
+    if (name === "propose_charging_slip") return await proposeAction(ctx, buildChargingProposal, args);
+    if (name === "propose_battery_claim") return await proposeAction(ctx, buildClaimProposal, args);
     return toolError(`There is no tool called ${name}.`);
   } catch {
     return toolError("That step failed unexpectedly. Nothing was saved.");
@@ -320,4 +490,9 @@ export const TOOL_LABELS: Record<string, string> = {
   propose_bill: "bill",
   propose_item: "new item",
   propose_customer: "new customer",
+  lookup_scrap: "scrap",
+  propose_scrap_add: "scrap intake",
+  propose_scrap_sale: "scrap sale",
+  propose_charging_slip: "charging slip",
+  propose_battery_claim: "battery claim",
 };
