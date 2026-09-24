@@ -5,6 +5,7 @@ import { getShopSnapshot } from "@/lib/ai/context";
 import { askGroqWithTools, GroqConfigError, GroqRequestError, type ChatMessage } from "@/lib/ai/groq";
 import { TOOL_DEFS, runTool } from "@/lib/ai/tools";
 import type { ToolContext } from "@/lib/ai/proposals";
+import { checkAiRateLimit } from "@/lib/ai/rateLimit";
 
 // Needs `fs` (via lib/ai/persona.ts) and reads cookies for auth, so this must
 // run in the Node.js runtime, not the Edge runtime.
@@ -51,6 +52,17 @@ export async function POST(req: Request) {
   }
   if (last.content.length > MAX_MESSAGE_CHARS) {
     return NextResponse.json({ error: "That message is too long — keep it under 2,000 characters." }, { status: 400 });
+  }
+
+  const rateLimit = await checkAiRateLimit(supabase);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      {
+        error: `Too many messages too fast — wait ${rateLimit.retryAfterSeconds}s and try again.`,
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+      },
+      { status: 429 }
+    );
   }
 
   const persona = loadPersona();
