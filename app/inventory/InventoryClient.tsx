@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Icon from "@/components/Icons";
 import PageHeader from "@/components/PageHeader";
 import Toast from "@/components/Toast";
-import { getBrowserClient } from "@/lib/supabase/lazy";
+import { offlineDb } from "@/lib/offline/db";
+import { offlineDelete } from "@/lib/offline/dataLayer";
+import { useLiveQuery } from "@/lib/offline/useLiveQuery";
+import { isBrowserOnline } from "@/lib/offline/net";
 import type { Category, InventoryItem } from "@/lib/types";
 import { CATEGORIES, categoryLabel, isLow, isOut, itemSpecs, normalizeType, typeLabel, typeOptionsFor } from "@/lib/inventory";
 import { formatRs } from "@/lib/format";
@@ -48,8 +51,13 @@ function StockCell({ item }: { item: InventoryItem }) {
 
 const delay = (i: number) => ({ "--i": Math.min(i, 8) }) as React.CSSProperties;
 
+// Matches the ordering the server query used to apply (brand, then model).
+function sortItems(a: InventoryItem, b: InventoryItem) {
+  return a.brand.localeCompare(b.brand) || a.model.localeCompare(b.model);
+}
+
 export default function InventoryClient({
-  items,
+  items: serverItems,
   initialQuery = "",
   initialLow = false,
   banner,
@@ -59,8 +67,26 @@ export default function InventoryClient({
   initialLow?: boolean;
   banner?: React.ReactNode;
 }) {
-  const router = useRouter();
   const wantsAdd = useSearchParams().get("add") === "1";
+
+  // The freshly server-fetched list only mirrors into the offline cache when we
+  // are actually online -- if this page came from the service worker's offline
+  // cache, `serverItems` is a stale snapshot and must not overwrite newer local
+  // edits sitting in IndexedDB waiting to sync.
+  useEffect(() => {
+    if (!isBrowserOnline() || serverItems.length === 0) return;
+    offlineDb.inventory.bulkPut(serverItems).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverItems]);
+
+  // From here on, `items` is whatever IndexedDB has -- kept in sync automatically
+  // as offline saves, deletes, and background pulls happen.
+  const items = useLiveQuery(
+    () => offlineDb.inventory.toArray().then((rows) => rows.sort(sortItems)),
+    [],
+    serverItems
+  );
+
   const [query, setQuery] = useState(initialQuery);
   const [category, setCategory] = useState<CategoryFilter>("all");
   const [subType, setSubType] = useState<string>("all"); // "all" or a normalised type such as "Lithium" or "UPS"
@@ -143,9 +169,11 @@ export default function InventoryClient({
   }
 
   function onSaved(message: string) {
+    // No router.refresh() here on purpose: the live IndexedDB query above
+    // already picked up the save (offlineSave in ItemForm writes to Dexie
+    // first), and a refresh would need the network, which offline it doesn't have.
     closeForm();
     setToast(message);
-    router.refresh();
   }
 
   function askDelete(item: InventoryItem) {
@@ -157,15 +185,14 @@ export default function InventoryClient({
     if (!deleting) return;
     setDeleteBusy(true);
     setDeleteError(null);
-    const { error } = await (await getBrowserClient()).from("inventory").delete().eq("id", deleting.id);
+    const { error, code, offline } = await offlineDelete("inventory", deleting.id);
     setDeleteBusy(false);
     if (error) {
-      setDeleteError(friendlyDeleteError(error, "item"));
+      setDeleteError(friendlyDeleteError({ code, message: error }, "item"));
       return;
     }
     setDeleting(null);
-    setToast("Item deleted.");
-    router.refresh();
+    setToast(offline ? "Item deleted locally. Will sync when you're back online." : "Item deleted.");
   }
 
   function clearFilters() {
