@@ -27,13 +27,34 @@ export class GroqConfigError extends Error {}
 /** Groq reached but returned an error (bad request, rate limit, outage, etc). */
 export class GroqRequestError extends Error {
   status?: number;
-  constructor(message: string, status?: number) {
+  /** Groq's own error code when it sent one, e.g. "tool_use_failed". */
+  code?: string;
+  constructor(message: string, status?: number, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
-export async function askGroq(messages: ChatMessage[]): Promise<string> {
+/* ---------- Tool calling (Phase 10, Part 2) ---------- */
+
+/** A function the model may ask the server to run. Read-only lookups only in Part 2. */
+export type ToolDef = {
+  type: "function";
+  function: { name: string; description: string; parameters: Record<string, unknown> };
+};
+
+type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
+
+type WireMessage =
+  | ChatMessage
+  | { role: "assistant"; content: string | null; tool_calls: ToolCall[] }
+  | { role: "tool"; tool_call_id: string; content: string };
+
+type GroqChoiceMessage = { content?: string | null; tool_calls?: ToolCall[] };
+
+/** One raw call to Groq. Throws friendly, typed errors. */
+async function callGroq(messages: WireMessage[], extra: Record<string, unknown> = {}): Promise<GroqChoiceMessage> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new GroqConfigError(
@@ -53,7 +74,10 @@ export async function askGroq(messages: ChatMessage[]): Promise<string> {
         model: process.env.GROQ_MODEL || DEFAULT_MODEL,
         messages,
         temperature: 0.3,
-        max_tokens: 700,
+        // gpt-oss "thinks" before answering and those tokens count here too,
+        // so this is a little higher than a plain chat reply would need.
+        max_tokens: 900,
+        ...extra,
       }),
     });
   } catch {
@@ -68,11 +92,83 @@ export async function askGroq(messages: ChatMessage[]): Promise<string> {
       throw new GroqRequestError("Groq rejected the API key. Check GROQ_API_KEY in .env.local / Vercel.", 401);
     }
     const text = await res.text().catch(() => "");
-    throw new GroqRequestError(`Groq request failed (${res.status}). ${text.slice(0, 200)}`.trim(), res.status);
+    let code: string | undefined;
+    try {
+      code = (JSON.parse(text) as { error?: { code?: string } }).error?.code;
+    } catch {
+      // Not JSON — leave the code empty.
+    }
+    throw new GroqRequestError(`Groq request failed (${res.status}). ${text.slice(0, 200)}`.trim(), res.status, code);
   }
 
-  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  const reply = data.choices?.[0]?.message?.content?.trim();
+  const data = (await res.json()) as { choices?: { message?: GroqChoiceMessage }[] };
+  const message = data.choices?.[0]?.message;
+  if (!message) throw new GroqRequestError("Groq sent back an empty reply. Try asking again.");
+  return message;
+}
+
+/** Plain question in, plain answer out. No tools. */
+export async function askGroq(messages: ChatMessage[]): Promise<string> {
+  const message = await callGroq(messages);
+  const reply = message.content?.trim();
   if (!reply) throw new GroqRequestError("Groq sent back an empty reply. Try asking again.");
   return reply;
+}
+
+/** How many times the model may ask for lookups before it must answer. Keeps one question from burning the free quota. */
+const MAX_TOOL_ROUNDS = 3;
+
+/**
+ * Asks Groq, lets it call the given read-only tools, feeds the results back,
+ * and returns the final text answer. `runTool` must return a string (JSON) and
+ * must never throw — return an error string instead so the model can explain.
+ */
+export async function askGroqWithTools(
+  messages: ChatMessage[],
+  tools: ToolDef[],
+  runTool: (name: string, rawArgs: string) => Promise<string>
+): Promise<{ reply: string; toolsUsed: string[] }> {
+  const convo: WireMessage[] = [...messages];
+  const toolsUsed: string[] = [];
+
+  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    // On the last round tools are switched off, so the model has to answer with what it already has.
+    const lastRound = round === MAX_TOOL_ROUNDS;
+
+    let message: GroqChoiceMessage;
+    try {
+      message = await callGroq(convo, lastRound ? {} : { tools, tool_choice: "auto" });
+    } catch (err) {
+      // The model sometimes writes a malformed tool call. Retry once as a plain
+      // answer rather than showing the person a scary error.
+      if (err instanceof GroqRequestError && err.code === "tool_use_failed" && !lastRound) {
+        const fallback = [
+          ...convo,
+          { role: "system" as const, content: "The lookup could not be run this time. Answer without it, and if you need a specific number you don't have, say you couldn't look it up and ask them to try again." },
+        ];
+        const plain = await callGroq(fallback);
+        const text = plain.content?.trim();
+        if (!text) throw new GroqRequestError("Groq sent back an empty reply. Try asking again.");
+        return { reply: text, toolsUsed };
+      }
+      throw err;
+    }
+
+    const calls = message.tool_calls ?? [];
+    if (calls.length === 0 || lastRound) {
+      const reply = message.content?.trim();
+      if (!reply) throw new GroqRequestError("Groq sent back an empty reply. Try asking again.");
+      return { reply, toolsUsed };
+    }
+
+    convo.push({ role: "assistant", content: message.content ?? null, tool_calls: calls });
+    for (const call of calls) {
+      if (!toolsUsed.includes(call.function.name)) toolsUsed.push(call.function.name);
+      const result = await runTool(call.function.name, call.function.arguments);
+      convo.push({ role: "tool", tool_call_id: call.id, content: result });
+    }
+  }
+
+  // Unreachable (the last round always returns), kept so TypeScript is satisfied.
+  throw new GroqRequestError("The assistant couldn't finish that lookup. Try asking again.");
 }
