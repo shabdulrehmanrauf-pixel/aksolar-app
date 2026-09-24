@@ -5,6 +5,7 @@ import { openCommand } from "@/lib/command";
 import Avatar from "./Avatar";
 import Icon from "./Icons";
 import LogoMark from "./LogoMark";
+import SyncStatusBadge from "./SyncStatusBadge";
 
 export default function TopBar({ email }: { email: string }) {
   return (
@@ -28,6 +29,7 @@ export default function TopBar({ email }: { email: string }) {
         </button>
 
         <div className="ml-auto flex items-center gap-2">
+          <SyncStatusBadge />
           {/* Desktop: quick add */}
           <Link href="/inventory?add=1" className="btn btn-quiet btn-sm hidden lg:inline-flex">
             <Icon name="plus" className="h-4 w-4" /> Item
