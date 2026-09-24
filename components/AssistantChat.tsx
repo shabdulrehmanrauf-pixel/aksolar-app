@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Icon from "./Icons";
 import AssistantProposalCard from "./AssistantProposalCard";
 import type { ProposalCard } from "@/lib/ai/proposalTypes";
+import { getRecognition, VOICE_LOCALE, type RecognitionLike, type VoiceLang } from "@/lib/speech";
 
 type Msg = { role: "user" | "assistant"; content: string; looked?: string[]; cards?: ProposalCard[] };
 
@@ -19,6 +20,15 @@ export default function AssistantChat() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Voice input — same browser speech-recognition pattern as CommandPalette.tsx
+  // (rule 15.2: reuse, don't duplicate). It only fills the text box; the
+  // recognised text is always shown and the person still taps Send themselves.
+  const [voiceOk, setVoiceOk] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceLang, setVoiceLang] = useState<VoiceLang>("en");
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  const recRef = useRef<RecognitionLike | null>(null);
+
   // Shows the persona's real name in the empty state, without waiting for a first reply.
   useEffect(() => {
     fetch("/api/assistant")
@@ -33,9 +43,57 @@ export default function AssistantChat() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, sending]);
 
+  useEffect(() => {
+    setVoiceOk(getRecognition() !== null);
+    return () => {
+      recRef.current?.abort();
+    };
+  }, []);
+
+  const stopListening = useCallback(() => {
+    recRef.current?.stop();
+    setListening(false);
+  }, []);
+
+  const listen = useCallback(() => {
+    const Rec = getRecognition();
+    if (!Rec) return;
+    setVoiceNote(null);
+    try {
+      const rec = new Rec();
+      rec.lang = VOICE_LOCALE[voiceLang];
+      rec.interimResults = true;
+      rec.continuous = false;
+      rec.onresult = (e) => {
+        let text = "";
+        for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+        setInput(text);
+      };
+      rec.onerror = (e) => {
+        setListening(false);
+        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+          setVoiceNote("The microphone is blocked. Allow it in your browser settings and try again.");
+        } else if (e.error === "no-speech") {
+          setVoiceNote("Did not hear anything. Tap the microphone and try again.");
+        } else if (e.error !== "aborted") {
+          setVoiceNote("Voice input did not work. You can type instead.");
+        }
+      };
+      rec.onend = () => setListening(false);
+      recRef.current = rec;
+      rec.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+      setVoiceNote("Voice input did not start. You can type instead.");
+    }
+  }, [voiceLang]);
+
   async function send() {
     const text = input.trim();
     if (!text || sending) return;
+    recRef.current?.abort();
+    setListening(false);
     setError(null);
     const next = [...messages, { role: "user" as const, content: text }];
     setMessages(next);
@@ -85,6 +143,7 @@ export default function AssistantChat() {
             <p className="max-w-sm text-sm text-lead">
               Ask about stock, prices or a customer&apos;s udhaar. You can also ask it to prepare a bill, a new item or a
               new customer — nothing is saved until you tap Confirm.
+              {voiceOk && " Tap the microphone to speak instead of typing."}
             </p>
           </div>
         ) : (
@@ -122,17 +181,57 @@ export default function AssistantChat() {
         </p>
       )}
 
+      {voiceOk && (
+        <div className="mt-3 flex items-center gap-2 text-sm text-lead">
+          <span>Voice language</span>
+          <div role="group" aria-label="Voice language" className="flex rounded-full bg-plate p-0.5 ring-1 ring-line">
+            {(["en", "ur"] as VoiceLang[]).map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => setVoiceLang(l)}
+                aria-pressed={voiceLang === l}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                  voiceLang === l ? "bg-casing text-white" : "text-lead hover:text-casing"
+                }`}
+              >
+                {l === "en" ? "English" : "Urdu"}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {voiceNote && (
+        <p role="status" className="mt-2 rounded-xl bg-sun/15 px-3.5 py-2 text-sm">
+          {voiceNote}
+        </p>
+      )}
+
       <div className="mt-3 flex items-end gap-2">
         <textarea
           ref={inputRef}
           className="input min-h-11 flex-1 resize-none"
           rows={1}
-          placeholder="Ask, or e.g. bill Ali Traders 2 Phoenix 150Ah on udhaar"
+          placeholder={listening ? "Listening…" : "Ask, or e.g. bill Ali Traders 2 Phoenix 150Ah on udhaar"}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           disabled={sending}
         />
+        {voiceOk && (
+          <button
+            type="button"
+            onClick={listening ? stopListening : listen}
+            aria-label={listening ? "Stop listening" : "Speak your message"}
+            aria-pressed={listening}
+            disabled={sending}
+            className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors ${
+              listening ? "mic-live bg-terminal text-white" : "bg-casing text-white hover:bg-casing-2"
+            }`}
+          >
+            <Icon name="mic" className="h-5 w-5" />
+          </button>
+        )}
         <button type="button" className="btn btn-primary shrink-0" onClick={send} disabled={sending || !input.trim()}>
           Send
         </button>
