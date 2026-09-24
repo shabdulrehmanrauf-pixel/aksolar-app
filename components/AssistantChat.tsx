@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Icon from "./Icons";
+import AssistantProposalCard from "./AssistantProposalCard";
+import type { ProposalCard } from "@/lib/ai/proposalTypes";
 
-type Msg = { role: "user" | "assistant"; content: string; looked?: string[] };
+type Msg = { role: "user" | "assistant"; content: string; looked?: string[]; cards?: ProposalCard[] };
 
 // Shown as a small "Looked up: …" note so people can see where an answer came from.
 const LOOKUP_LABELS: Record<string, string> = { lookup_inventory: "stock", lookup_customer: "customers" };
@@ -48,7 +50,8 @@ export default function AssistantChat() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Something went wrong.");
       const looked = ((data.toolsUsed as string[] | undefined) ?? []).map((t) => LOOKUP_LABELS[t]).filter(Boolean);
-      setMessages((cur) => [...cur, { role: "assistant", content: data.reply as string, looked }]);
+      const cards = (data.proposals as ProposalCard[] | undefined) ?? [];
+      setMessages((cur) => [...cur, { role: "assistant", content: data.reply as string, looked, cards }]);
       if (data.personaName) setPersonaName(data.personaName);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -56,6 +59,11 @@ export default function AssistantChat() {
       setSending(false);
       inputRef.current?.focus();
     }
+  }
+
+  /** A proposal card reports what happened, so the conversation (and the assistant) knows the real result. */
+  function addNote(note: string) {
+    setMessages((cur) => [...cur, { role: "assistant", content: note }]);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -75,14 +83,14 @@ export default function AssistantChat() {
             </span>
             <p className="font-semibold text-casing">{personaName}</p>
             <p className="max-w-sm text-sm text-lead">
-              Ask about a stock item, a price, a customer&apos;s udhaar, or today&apos;s numbers. It looks things up in your
-              real records — it can&apos;t create or change anything in the shop yet.
+              Ask about stock, prices or a customer&apos;s udhaar. You can also ask it to prepare a bill, a new item or a
+              new customer — nothing is saved until you tap Confirm.
             </p>
           </div>
         ) : (
           <ul className="space-y-3">
             {messages.map((m, i) => (
-              <li key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              <li key={i} className={`flex flex-col gap-2 ${m.role === "user" ? "items-end" : "items-start"}`}>
                 <div
                   className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed ${
                     m.role === "user" ? "bg-casing text-white" : "border border-line bg-plate text-casing"
@@ -93,6 +101,9 @@ export default function AssistantChat() {
                     <p className="mt-1.5 text-xs text-lead">Looked up: {m.looked.join(" · ")}</p>
                   )}
                 </div>
+                {m.cards?.map((c) => (
+                  <AssistantProposalCard key={c.id} card={c} onOutcome={addNote} />
+                ))}
               </li>
             ))}
             {sending && (
@@ -116,7 +127,7 @@ export default function AssistantChat() {
           ref={inputRef}
           className="input min-h-11 flex-1 resize-none"
           rows={1}
-          placeholder="Ask something, e.g. how many Osaka batteries are left?"
+          placeholder="Ask, or e.g. bill Ali Traders 2 Phoenix 150Ah on udhaar"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
