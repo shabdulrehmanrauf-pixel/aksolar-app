@@ -1,10 +1,13 @@
 /**
- * Read-only lookup tools the AI assistant can ask the server to run
- * (Phase 10, Part 2). Two tools: one inventory item, one customer.
+ * Tools the AI assistant can ask the server to run.
+ *  - Part 2: two READ-ONLY lookups (one inventory item, one customer).
+ *  - Part 3: three "propose_*" tools. These only PREPARE a bill / item / customer:
+ *    they validate it and save a proposal (lib/ai/proposals.ts). Nothing is written to
+ *    the shop's data until a person taps Confirm on the card in the chat.
  *
  * Safety rules baked in here (change them only on purpose):
- *  - READ-ONLY. Nothing in this file inserts, updates or deletes. Write actions
- *    are Part 3 and will go through the same create_invoice() RPC as the app.
+ *  - The lookups are READ-ONLY. Nothing in this file inserts, updates or deletes.
+ *    The propose_* tools never write shop data either — see lib/ai/proposals.ts.
  *  - Runs with the signed-in user's session, so Row Level Security still applies.
  *  - Search rules are the app's own (`stockMatches` in lib/inventory.ts,
  *    `customerMatches` in lib/customers.ts) — the same ones the search box uses.
@@ -21,6 +24,7 @@ import { categoryLabel, isLow, isOut, itemSpecs, stockMatches, stockMatchScore }
 import { formatDay, round2 } from "@/lib/invoices";
 import { formatRs } from "@/lib/format";
 import type { ToolDef } from "@/lib/ai/groq";
+import { buildBillProposal, buildCustomerProposal, buildItemProposal, proposeAction, type ToolContext } from "@/lib/ai/proposals";
 import type { Category, Customer, InventoryItem } from "@/lib/types";
 
 type Supa = Awaited<ReturnType<typeof createClient>>;
@@ -59,6 +63,85 @@ export const TOOL_DEFS: ToolDef[] = [
           query: { type: "string", description: "The customer's name or phone number, e.g. 'ali traders' or '0300 1234567'." },
         },
         required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_bill",
+      description:
+        "Prepare a sale bill for the person to confirm. This does NOT save anything: it shows a confirmation card. Use when they ask to bill, sell or make an invoice for someone. Never guess: if the customer, an item, a quantity, or how much they paid is unclear, ask first. Only pass a rate if the person stated a price; otherwise leave it out so the normal price is used. Totals are calculated by the app.",
+      parameters: {
+        type: "object",
+        properties: {
+          customer: { type: "string", description: "Saved customer's name or phone. Leave out for a walk-in cash sale." },
+          walk_in_name: { type: "string", description: "Optional name for a walk-in buyer who is not a saved customer." },
+          items: {
+            type: "array",
+            description: "What is being sold.",
+            items: {
+              type: "object",
+              properties: {
+                item: { type: "string", description: "Short keywords for the stock item, e.g. 'phoenix 150ah'." },
+                quantity: { type: "integer", description: "How many. Whole number, 1 or more." },
+                rate: { type: "number", description: "Price per piece, ONLY if the person stated one." },
+              },
+              required: ["item", "quantity"],
+            },
+          },
+          payment: { type: "string", enum: ["paid", "udhaar", "partial"], description: "paid = full payment now (cash sale), udhaar = nothing paid now, partial = some paid now. Ask if unclear." },
+          amount_paid: { type: "number", description: "Only for partial: how much is paid now." },
+          payment_method: { type: "string", enum: ["cash", "bank", "other"], description: "Defaults to cash." },
+          note: { type: "string", description: "Optional note, e.g. a vehicle number." },
+        },
+        required: ["items"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_item",
+      description:
+        "Prepare a NEW stock item to add to inventory, for the person to confirm. This does NOT save anything. It cannot add stock to an item that already exists. Cost price and sale price are required: if the person didn't give them, ask. Never guess prices or specs.",
+      parameters: {
+        type: "object",
+        properties: {
+          category: { type: "string", enum: ["battery", "panel", "accessory"] },
+          brand: { type: "string" },
+          model: { type: "string" },
+          type: { type: "string", description: "Battery: Lithium, Tubular, Lead-acid or Dry. Required for batteries." },
+          voltage: { type: "number", description: "Volts, batteries only." },
+          plates: { type: "integer", description: "Number of plates, batteries only." },
+          ah_rating: { type: "number", description: "Ah, batteries only." },
+          wattage: { type: "integer", description: "Watts, solar panels only." },
+          warranty_months: { type: "integer" },
+          cost_price: { type: "number", description: "What the shop pays per piece. Required." },
+          sale_price: { type: "number", description: "What the shop sells for per piece. Required." },
+          quantity: { type: "integer", description: "Starting stock." },
+          reorder_level: { type: "integer", description: "Low-stock warning level." },
+        },
+        required: ["category", "brand", "model", "cost_price", "sale_price"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_customer",
+      description:
+        "Prepare a NEW customer to save, for the person to confirm. This does NOT save anything. Only the name is required; do not invent a phone number or address.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          phone: { type: "string" },
+          address: { type: "string" },
+          registered: { type: "boolean", description: "True only if they have an NTN/CNIC on the tax record." },
+          cnic_or_ntn: { type: "string", description: "13-digit CNIC or 7-digit NTN. Required if registered." },
+        },
+        required: ["name"],
       },
     },
   },
@@ -215,15 +298,18 @@ async function lookupCustomer(supabase: Supa, args: Record<string, unknown>): Pr
 /* ------------------------------------------------------------------ runner */
 
 /** Runs one tool call from the model. Never throws — problems come back as a JSON error string. */
-export async function runTool(supabase: Supa, name: string, rawArgs: string): Promise<string> {
+export async function runTool(ctx: ToolContext, name: string, rawArgs: string): Promise<string> {
   const args = parseArgs(rawArgs);
   if (!args) return toolError("The lookup arguments were not valid.");
   try {
-    if (name === "lookup_inventory") return await lookupInventory(supabase, args);
-    if (name === "lookup_customer") return await lookupCustomer(supabase, args);
-    return toolError(`There is no tool called ${name}. Only lookup_inventory and lookup_customer exist.`);
+    if (name === "lookup_inventory") return await lookupInventory(ctx.supabase, args);
+    if (name === "lookup_customer") return await lookupCustomer(ctx.supabase, args);
+    if (name === "propose_bill") return await proposeAction(ctx, buildBillProposal, args);
+    if (name === "propose_item") return await proposeAction(ctx, buildItemProposal, args);
+    if (name === "propose_customer") return await proposeAction(ctx, buildCustomerProposal, args);
+    return toolError(`There is no tool called ${name}.`);
   } catch {
-    return toolError("The lookup failed unexpectedly.");
+    return toolError("That step failed unexpectedly. Nothing was saved.");
   }
 }
 
@@ -231,4 +317,7 @@ export async function runTool(supabase: Supa, name: string, rawArgs: string): Pr
 export const TOOL_LABELS: Record<string, string> = {
   lookup_inventory: "stock",
   lookup_customer: "customers",
+  propose_bill: "bill",
+  propose_item: "new item",
+  propose_customer: "new customer",
 };
