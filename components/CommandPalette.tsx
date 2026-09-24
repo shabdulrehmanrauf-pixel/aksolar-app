@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { customerMatches, formatPhone } from "@/lib/customers";
-import { categoryLabel, isLow, isOut } from "@/lib/inventory";
+import { categoryLabel, isLow, isOut, stockMatches } from "@/lib/inventory";
 import { formatRs } from "@/lib/format";
 import { formatDay, invoiceMatches } from "@/lib/invoices";
 import { getRecognition, VOICE_LOCALE, type RecognitionLike, type VoiceLang } from "@/lib/speech";
@@ -170,14 +170,10 @@ export default function CommandPalette({
     const q = query.trim().toLowerCase();
     if (!q) return ACTIONS;
 
-    const words = q.split(/\s+/);
     const out: Hit[] = [];
 
     stock
-      .filter((s) => {
-        const hay = `${s.brand} ${s.model} ${s.type ?? ""} ${categoryLabel(s.category)}`.toLowerCase();
-        return words.every((w) => hay.includes(w));
-      })
+      .filter((s) => stockMatches(s, q))
       .slice(0, 6)
       .forEach((s) => {
         const tag: Hit["tag"] = isOut(s)
