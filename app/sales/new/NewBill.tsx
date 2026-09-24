@@ -74,6 +74,16 @@ type Replacement = {
   note: string;
 };
 
+/** A bill the AI assistant prepared, opened here for editing (Phase 10 Part 3). Filled in once, then it's an ordinary bill. */
+export type BillDraft = {
+  walkinName: string;
+  note: string;
+  lines: { itemId: string; qty: string; rate: string }[];
+  mode: PayMode;
+  partText: string;
+  method: PaymentMethod;
+};
+
 const PAY_MODES: { value: PayMode; label: string; hint: string }[] = [
   { value: "full", label: "Paid in full", hint: "Customer pays everything now" },
   { value: "part", label: "Part payment", hint: "Some now, the rest is udhaar" },
@@ -88,10 +98,12 @@ export default function NewBill({
   stock: serverStock,
   customers: serverCustomers,
   initialCustomerId,
+  initialDraft = null,
 }: {
   stock: BillItem[];
   customers: BillCustomer[];
   initialCustomerId: string | null;
+  initialDraft?: BillDraft | null;
 }) {
   const router = useRouter();
 
@@ -110,11 +122,11 @@ export default function NewBill({
   const customers = useLiveQuery(() => offlineDb.customers.toArray(), [], serverCustomers) as BillCustomer[];
 
   const [customerId, setCustomerId] = useState<string | null>(initialCustomerId);
-  const [walkinName, setWalkinName] = useState("");
+  const [walkinName, setWalkinName] = useState(initialDraft?.walkinName ?? "");
   const [pickingCustomer, setPickingCustomer] = useState(false);
   const [customerQuery, setCustomerQuery] = useState("");
   const [addingCustomer, setAddingCustomer] = useState(false);
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(initialDraft?.note ?? "");
 
   // Walk-in bills can carry their own phone/address/tax details directly on the invoice,
   // without needing a saved customer record.
@@ -128,7 +140,7 @@ export default function NewBill({
   const [invoiceDate, setInvoiceDate] = useState(() => todayKarachi());
   const today = useMemo(() => todayKarachi(), []);
 
-  const [lines, setLines] = useState<Line[]>([]);
+  const [lines, setLines] = useState<Line[]>(initialDraft?.lines ?? []);
   const [itemQuery, setItemQuery] = useState("");
   const [activeHit, setActiveHit] = useState(0);
   const itemInputRef = useRef<HTMLInputElement>(null);
@@ -142,9 +154,9 @@ export default function NewBill({
   // Old batteries taken in exchange, one optional entry per battery line. See the Replacement type above.
   const [replacements, setReplacements] = useState<Record<string, Replacement>>({});
 
-  const [mode, setMode] = useState<PayMode>("full");
-  const [partText, setPartText] = useState("");
-  const [method, setMethod] = useState<PaymentMethod>("cash");
+  const [mode, setMode] = useState<PayMode>(initialDraft?.mode ?? "full");
+  const [partText, setPartText] = useState(initialDraft?.partText ?? "");
+  const [method, setMethod] = useState<PaymentMethod>(initialDraft?.method ?? "cash");
 
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -160,7 +172,15 @@ export default function NewBill({
 
   const customer = customers.find((c) => c.id === customerId) ?? null;
   // Items added by hand this session join the searchable stock list straight away.
-  const allStock = useMemo(() => [...stock, ...extraStock], [stock, extraStock]);
+  const allStock = useMemo(() => {
+    // Lines pre-filled from an AI draft must always resolve, even in the split second before the
+    // on-device cache has caught up with the server list.
+    const have = new Set(stock.map((s) => s.id));
+    const fromDraft = initialDraft
+      ? serverStock.filter((s) => !have.has(s.id) && initialDraft.lines.some((l) => l.itemId === s.id))
+      : [];
+    return [...stock, ...fromDraft, ...extraStock];
+  }, [stock, extraStock, serverStock, initialDraft]);
   const byId = useMemo(() => new Map(allStock.map((s) => [s.id, s])), [allStock]);
 
   /* ---------- Item search ---------- */
