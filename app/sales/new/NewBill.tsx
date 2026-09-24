@@ -23,11 +23,16 @@ import {
   parseAmount,
   parseQty,
   PAYMENT_METHODS,
+  paymentStatusFor,
   round2,
   todayKarachi,
 } from "@/lib/invoices";
 import { getBrowserClient } from "@/lib/supabase/lazy";
-import type { Customer, InventoryItem, PaymentMethod, RegistrationType } from "@/lib/types";
+import { checkRealConnectivity, isBrowserOnline } from "@/lib/offline/net";
+import { offlineDb, hasIndexedDb, type LocalInvoice } from "@/lib/offline/db";
+import { notifySyncListeners, runSync } from "@/lib/offline/sync";
+import { useLiveQuery } from "@/lib/offline/useLiveQuery";
+import type { Customer, InventoryItem, InvoiceItem, PaymentMethod, PaymentStatus, RegistrationType } from "@/lib/types";
 import CustomerForm from "@/app/customers/CustomerForm";
 import ManualItemForm from "./ManualItemForm";
 
@@ -80,8 +85,8 @@ function specText(item: BillItem) {
 }
 
 export default function NewBill({
-  stock,
-  customers,
+  stock: serverStock,
+  customers: serverCustomers,
   initialCustomerId,
 }: {
   stock: BillItem[];
@@ -89,6 +94,20 @@ export default function NewBill({
   initialCustomerId: string | null;
 }) {
   const router = useRouter();
+
+  // Same offline-cache pattern as Inventory/Customers: mirror fresh server data
+  // into IndexedDB, then always read the bill screen's stock and customer list
+  // back out of IndexedDB so it reflects on-device stock changes from bills
+  // made earlier today while offline, plus items added by hand mid-bill.
+  useEffect(() => {
+    if (!isBrowserOnline()) return;
+    if (serverStock.length > 0) offlineDb.inventory.bulkPut(serverStock as InventoryItem[]).catch(() => {});
+    if (serverCustomers.length > 0) offlineDb.customers.bulkPut(serverCustomers as Customer[]).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverStock, serverCustomers]);
+
+  const stock = useLiveQuery(() => offlineDb.inventory.toArray(), [], serverStock) as BillItem[];
+  const customers = useLiveQuery(() => offlineDb.customers.toArray(), [], serverCustomers) as BillCustomer[];
 
   const [customerId, setCustomerId] = useState<string | null>(initialCustomerId);
   const [walkinName, setWalkinName] = useState("");
@@ -296,6 +315,125 @@ export default function NewBill({
     return null;
   }
 
+  /**
+   * A bill made while offline can't get its real "AK-000123" number -- that is
+   * handed out by a database sequence, and generating one on the device could
+   * collide with another device's next bill. Instead we save everything needed
+   * to create it here, queue the exact same RPC call, and let the sync engine
+   * run it for real (and hand it its real number) the moment we're back online.
+   */
+  async function saveOffline() {
+    const localId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const buyerName = customer ? customer.name : walkinName.trim() || "Walk-in customer";
+    const paymentStatus: PaymentStatus = paymentStatusFor(total, paidNow);
+
+    const createInvoiceParams = {
+      p_customer_id: customerId,
+      p_walkin_name: customerId ? null : walkinName.trim() || null,
+      p_note: note.trim() || null,
+      p_invoice_date: invoiceDate,
+      p_items: computed.map((c) => ({ inventory_id: c.item.id, quantity: c.qty, rate: c.rate })),
+      p_paid: paidNow,
+      p_method: method,
+      p_walkin_phone: customerId ? null : normalizePhone(walkinPhone) || null,
+      p_walkin_address: customerId ? null : walkinAddress.trim() || null,
+      p_walkin_registration_type: customerId ? null : walkinRegType,
+      p_walkin_cnic_or_ntn: customerId ? null : cleanRegNo(walkinCnic) || null,
+    };
+
+    const localInvoice: LocalInvoice = {
+      id: localId,
+      local_id: localId,
+      pending: true,
+      invoice_number: "Pending sync",
+      invoice_type: "Sale Invoice",
+      invoice_date: invoiceDate,
+      customer_id: customerId,
+      buyer_name: buyerName,
+      buyer_registration_type: customer?.registration_type ?? walkinRegType,
+      buyer_cnic_or_ntn: customer?.cnic_or_ntn ?? (cleanRegNo(walkinCnic) || null),
+      buyer_address: customer ? null : walkinAddress.trim() || null,
+      buyer_phone: customer?.phone ?? (normalizePhone(walkinPhone) || null),
+      note: note.trim() || null,
+      total_value: total,
+      status: "Valid",
+      payment_status: paymentStatus,
+      created_at: now,
+      paid_total: paidNow,
+      due_total: due,
+    };
+
+    const items: InvoiceItem[] = computed.map((c) => ({
+      id: crypto.randomUUID(),
+      invoice_id: localId,
+      inventory_id: c.item.id,
+      description: `${c.item.brand} ${c.item.model}`,
+      hs_code: null,
+      uom: "Numbers, pieces, units",
+      quantity: c.qty!,
+      rate: c.rate!,
+      value_excl_tax: c.amount,
+      sales_tax: 0,
+      total: c.amount,
+    }));
+
+    if (hasIndexedDb()) {
+      await offlineDb.invoices.put(localInvoice);
+      await offlineDb.invoice_items.bulkAdd(items);
+
+      // Reflect the sale in the local stock count straight away, so Inventory
+      // (and the item search on this same screen) shows accurate numbers even
+      // before this bill has actually reached Supabase.
+      for (const c of computed) {
+        const cached = await offlineDb.inventory.get(c.item.id);
+        if (cached) await offlineDb.inventory.put({ ...cached, quantity: Math.max(0, cached.quantity - c.qty!) });
+      }
+
+      await offlineDb.pending_sync.add({
+        table_name: "rpc",
+        rpc_name: "create_invoice",
+        record_id: localId,
+        action: "rpc",
+        payload: createInvoiceParams,
+        group_id: localId,
+        created_at: now,
+        synced: false,
+      });
+
+      const toRecord = computed.filter((c) => replacements[c.line.itemId]);
+      for (const c of toRecord) {
+        const rep = replacements[c.line.itemId];
+        const weight = rep.weight.trim() ? parseAmount(rep.weight) : null;
+        await offlineDb.pending_sync.add({
+          table_name: "rpc",
+          rpc_name: "record_scrap_intake",
+          record_id: crypto.randomUUID(),
+          action: "rpc",
+          group_id: localId,
+          payload: {
+            p_invoice_id: `__LOCAL_INVOICE__:${localId}`,
+            p_customer_id: customerId,
+            p_customer_name: buyerName,
+            p_brand: rep.brand.trim(),
+            p_model: rep.model.trim(),
+            p_battery_type: rep.batteryType.trim() || null,
+            p_battery_number: rep.batteryNumber.trim() || null,
+            p_quantity: parseQty(rep.qty),
+            p_estimated_weight_kg: weight,
+            p_note: rep.note.trim() || null,
+            p_received_date: invoiceDate,
+          },
+          created_at: now,
+          synced: false,
+        });
+      }
+    }
+
+    notifySyncListeners();
+    void runSync(); // harmless if still offline -- it will just re-check and back off
+  }
+
   async function save(thenPrint: boolean) {
     if (savingRef.current) return; // never save the same bill twice
     const found = problem();
@@ -307,6 +445,19 @@ export default function NewBill({
     setSaving(true);
     setError(null);
     try {
+      const online = await checkRealConnectivity();
+      if (!online) {
+        await saveOffline();
+        setToast(
+          thenPrint
+            ? "Bill saved on this device. Printing needs a connection -- it will be ready to print once this syncs."
+            : "Bill saved on this device. It will get its official number once you're back online."
+        );
+        // Give the toast a moment on screen before leaving this page.
+        setTimeout(() => router.push("/sales"), 1100);
+        return;
+      }
+
       const supabase = await getBrowserClient();
       const { data, error: dbError } = await supabase.rpc("create_invoice", {
         p_customer_id: customerId,
