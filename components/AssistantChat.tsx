@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "./Icons";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Msg = { role: "user" | "assistant"; content: string; looked?: string[] };
+
+// Shown as a small "Looked up: …" note so people can see where an answer came from.
+const LOOKUP_LABELS: Record<string, string> = { lookup_inventory: "stock", lookup_customer: "customers" };
 
 export default function AssistantChat() {
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -40,11 +43,12 @@ export default function AssistantChat() {
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: next.map(({ role, content }) => ({ role, content })) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Something went wrong.");
-      setMessages((cur) => [...cur, { role: "assistant", content: data.reply as string }]);
+      const looked = ((data.toolsUsed as string[] | undefined) ?? []).map((t) => LOOKUP_LABELS[t]).filter(Boolean);
+      setMessages((cur) => [...cur, { role: "assistant", content: data.reply as string, looked }]);
       if (data.personaName) setPersonaName(data.personaName);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -71,8 +75,8 @@ export default function AssistantChat() {
             </span>
             <p className="font-semibold text-casing">{personaName}</p>
             <p className="max-w-sm text-sm text-lead">
-              Ask about stock, sales, udhaar or customers. It can look things up and explain — it can&apos;t create or
-              change anything in the shop yet.
+              Ask about a stock item, a price, a customer&apos;s udhaar, or today&apos;s numbers. It looks things up in your
+              real records — it can&apos;t create or change anything in the shop yet.
             </p>
           </div>
         ) : (
@@ -85,6 +89,9 @@ export default function AssistantChat() {
                   }`}
                 >
                   {m.content}
+                  {m.looked && m.looked.length > 0 && (
+                    <p className="mt-1.5 text-xs text-lead">Looked up: {m.looked.join(" · ")}</p>
+                  )}
                 </div>
               </li>
             ))}
