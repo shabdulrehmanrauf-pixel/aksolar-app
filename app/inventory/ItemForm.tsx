@@ -11,28 +11,13 @@ import {
   BATTERY_TYPES,
   CATEGORIES,
   DEFAULT_UOM,
+  itemPayload as toPayload,
+  MONEY_RE as MONEY,
   PANEL_TYPES,
+  validateItem as validate,
+  type ItemErrors as Errors,
+  type ItemFormValues as FormState,
 } from "@/lib/inventory";
-
-type FormState = {
-  category: Category;
-  brand: string;
-  model: string;
-  type: string;
-  voltage: string;
-  plates: string;
-  ah_rating: string;
-  wattage: string;
-  warranty_months: string;
-  cost_price: string;
-  sale_price: string;
-  quantity: string;
-  reorder_level: string;
-  hs_code: string;
-  uom: string;
-};
-
-type Errors = Partial<Record<keyof FormState, string>>;
 
 const str = (n: number | null | undefined) => (n == null ? "" : String(n));
 
@@ -72,67 +57,6 @@ function initialState(item: InventoryItem | null): FormState {
     reorder_level: str(item.reorder_level),
     hs_code: item.hs_code ?? "",
     uom: item.uom,
-  };
-}
-
-const MONEY = /^\d+(\.\d{1,2})?$/;
-const WHOLE = /^\d+$/;
-
-function validate(f: FormState): Errors {
-  const e: Errors = {};
-  if (!f.brand.trim()) e.brand = "Enter the brand.";
-  if (!f.model.trim()) e.model = "Enter the model.";
-  if (f.category === "battery" && !f.type) e.type = "Choose the battery type.";
-
-  const optionalDecimal = (key: keyof FormState, label: string) => {
-    const v = f[key].trim();
-    if (v && (!MONEY.test(v) || Number(v) <= 0)) e[key] = `${label} must be a number above 0.`;
-  };
-  const optionalWhole = (key: keyof FormState, label: string) => {
-    const v = f[key].trim();
-    if (v && (!WHOLE.test(v) || Number(v) <= 0)) e[key] = `${label} must be a whole number above 0.`;
-  };
-
-  if (f.category === "battery") {
-    optionalDecimal("voltage", "Voltage");
-    optionalWhole("plates", "Plates");
-    optionalDecimal("ah_rating", "Ah rating");
-  }
-  if (f.category === "panel") optionalWhole("wattage", "Wattage");
-  optionalWhole("warranty_months", "Warranty");
-
-  if (!MONEY.test(f.cost_price.trim())) e.cost_price = "Enter the cost price, for example 42000. Up to 2 decimals.";
-  if (!MONEY.test(f.sale_price.trim())) e.sale_price = "Enter the sale price, for example 45000. Up to 2 decimals.";
-  if (!WHOLE.test(f.quantity.trim())) e.quantity = "Enter a whole number, 0 or more.";
-  if (!WHOLE.test(f.reorder_level.trim())) e.reorder_level = "Enter a whole number, 0 or more.";
-
-  const hs = f.hs_code.trim();
-  if (hs && !/^\d{4}\.\d{4}$/.test(hs)) e.hs_code = "Use 4 digits, a dot, then 4 digits. Example: 8507.2000";
-  if (!f.uom.trim()) e.uom = "Enter the unit of measure.";
-
-  return e;
-}
-
-function toPayload(f: FormState) {
-  const num = (s: string) => (s.trim() === "" ? null : Number(s));
-  const isBattery = f.category === "battery";
-  const isPanel = f.category === "panel";
-  return {
-    category: f.category,
-    brand: f.brand.trim(),
-    model: f.model.trim(),
-    type: f.type.trim() || null,
-    voltage: isBattery ? num(f.voltage) : null,
-    plates: isBattery ? num(f.plates) : null,
-    ah_rating: isBattery ? num(f.ah_rating) : null,
-    wattage: isPanel ? num(f.wattage) : null,
-    warranty_months: num(f.warranty_months),
-    cost_price: Number(f.cost_price),
-    sale_price: Number(f.sale_price),
-    quantity: Number(f.quantity),
-    reorder_level: Number(f.reorder_level),
-    hs_code: f.hs_code.trim() || null,
-    uom: f.uom.trim(),
   };
 }
 
