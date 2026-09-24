@@ -1,42 +1,49 @@
-# AI assistant personas
+# AI assistant knowledge files
 
-Each `.md` file in this folder is one persona (a personality + set of instructions)
-for the AK Solar AI assistant. The assistant reads the file fresh on every request —
-no rebuild or restart needed, just save the file and ask again.
+Drop `.md` or `.txt` files in this folder and the assistant automatically reads
+them and treats them as background knowledge — no code change needed. This is
+where a staff manual, return policy, warranty rules, or price-list notes go.
 
-## Format
+**`manual.md` already exists here** — a shop-wide user manual covering every
+screen (Home, Inventory, Customers, Sales, New bill, Reports, Battery
+services, Scrap, Assistant, More), the New-bill flow, udhaar/payments,
+offline mode, and the shop glossary. The assistant uses it automatically to
+answer "how do I…" and "what is…" questions about the app itself, not just
+questions about stock and customers.
 
-```
-# Display name shown in the chat
-
-Plain-English instructions: how this persona should talk, what to focus on,
-anything it should always do or never do.
-```
-
-- The **first line** must be a `# Heading` — that becomes the name shown in the chat
-  header (e.g. "AK Solar Assistant").
-- Everything after that is free text. Write it like you're briefing a new counter
-  clerk: tone, what matters to the owner, local words to use (udhaar, khata, bill),
-  what to be careful about.
-- Keep it reasonably short (a few paragraphs). It is sent with every single request,
-  so a long persona file eats into Groq's free-tier token limits for no benefit.
-
-## Switching the active persona
-
-Set this in `.env.local` (and in Vercel's project env vars):
+To add more (returns, warranty, price-list notes), drop another file here,
+e.g. `returns-policy.md` —
 
 ```
-AI_ASSISTANT_PERSONA=default
+## Returns
+Batteries can be returned within 7 days with the original slip...
+
+## Warranty claims
+...
 ```
 
-The value is the filename without `.md`. To add a new persona, copy `default.md` to
-e.g. `strict-accountant.md`, edit it, then set `AI_ASSISTANT_PERSONA=strict-accountant`.
+— and the assistant will start answering questions like "what's our return
+policy?" using that text, automatically, on the next message. No need to
+edit `manual.md` itself for unrelated topics — a separate file per topic is
+easier to keep track of than one growing file.
 
-If the named file is missing, the assistant silently falls back to a plain built-in
-persona rather than failing — so a typo in the env var never breaks the app.
+## How it works (Part 1 — simple version)
 
-## What personas can't do (yet)
+Every file in this folder is read on each request and appended to the
+assistant's instructions, up to a combined size limit (currently ~6,000
+characters, set in `lib/ai/persona.ts`) so a large manual can't blow up Groq's
+free-tier token budget or slow every reply down. `manual.md` alone uses
+roughly 4,600 of that — keep any new file short, or trim `manual.md`, if you
+add more.
 
-A persona only changes **tone and instructions**. It cannot give the assistant new
-abilities — it still can't create bills, edit stock, or touch the database. That
-comes in a later part (see `MDF_IELES/AK-Solar-Phase10-AI-Assistant-Status.md`).
+This is intentionally simple for now: the whole file's text gets included every
+time, there's no search or chunking. That's fine for a manual up to a few pages.
+
+## When this will need upgrading
+
+Now that `manual.md` exists, watch the combined size as you add more files —
+if you're approaching the ~6,000-character limit, or the AI starts giving
+vaguer answers because too much is jammed into one prompt, that's the trigger
+for building real retrieval (searching the folder for the relevant bit
+instead of sending everything every time). That upgrade is intentionally
+**not** part of this build — do it as its own small phase later.
