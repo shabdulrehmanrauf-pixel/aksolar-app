@@ -85,3 +85,41 @@ export function itemSpecs(item: InventoryItem): string {
   if (item.warranty_months) parts.push(`${item.warranty_months}\u00a0months warranty`);
   return parts.join(", ");
 }
+
+/* ---------- Search (shared by the search box and the AI assistant) ---------- */
+
+type StockSearchable = Pick<InventoryItem, "brand" | "model" | "type" | "category"> &
+  Partial<Pick<InventoryItem, "voltage" | "plates" | "ah_rating" | "wattage">>;
+
+/** Splits what a person typed into lower-case words. Punctuation and hyphens are ignored, so "Osaka 200Ah?" and "12V-200Ah" both work. */
+export function searchWords(query: string): string[] {
+  return query
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}.\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** The text an item is searched against: brand, model, type, category and its main specs (200Ah, 12V, 550W). */
+function stockHaystack(s: StockSearchable): string {
+  const specs: string[] = [];
+  if (s.ah_rating != null) specs.push(`${s.ah_rating}ah`);
+  if (s.voltage != null) specs.push(`${s.voltage}v`);
+  if (s.wattage != null) specs.push(`${s.wattage}w`);
+  if (s.plates != null) specs.push(`${s.plates}plates`);
+  return `${s.brand} ${s.model} ${s.type ?? ""} ${categoryLabel(s.category)} ${specs.join(" ")}`.toLowerCase();
+}
+
+/** How many of the typed words appear in the item. */
+export function stockMatchScore(s: StockSearchable, query: string): number {
+  const hay = stockHaystack(s);
+  return searchWords(query).filter((w) => hay.includes(w)).length;
+}
+
+/** True when every typed word is found in the item's brand, model, type, category or specs. */
+export function stockMatches(s: StockSearchable, query: string): boolean {
+  const words = searchWords(query);
+  if (words.length === 0) return true;
+  const hay = stockHaystack(s);
+  return words.every((w) => hay.includes(w));
+}
