@@ -112,12 +112,12 @@ export function friendlyInvoiceError(error: DbError): string {
   return error.message;
 }
 
-/** Message shown when a customer or item cannot be deleted because bills use it. */
-export function friendlyDeleteError(error: DbError, what: "customer" | "item"): string {
+/** Message shown when a customer, item or supplier cannot be deleted because bills use it. */
+export function friendlyDeleteError(error: DbError, what: "customer" | "item" | "supplier"): string {
   if (error.code === "23503") {
-    return what === "customer"
-      ? "This customer has bills, so they cannot be deleted. Bills must stay in your records."
-      : "This item is on a bill, so it cannot be deleted. Set its quantity to 0 instead.";
+    if (what === "customer") return "This customer has bills, so they cannot be deleted. Bills must stay in your records.";
+    if (what === "supplier") return "This supplier has purchase bills or payments, so it cannot be deleted. Mark it inactive instead.";
+    return "This item is on a bill, so it cannot be deleted. Set its quantity to 0 instead.";
   }
   return `Could not delete. ${error.message}`;
 }
