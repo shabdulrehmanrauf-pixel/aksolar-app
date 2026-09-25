@@ -103,6 +103,116 @@ export type Distributor = {
   note: string | null;
 };
 
+/* ---------- Suppliers & Purchases (Phase F1) ---------- */
+/* "Supplier" is the shop-facing word for a row in the same `distributors` table Battery claims already
+ * uses (decision D1) -- extended with the columns below. `Distributor` above stays as-is so existing
+ * Battery claims code keeps working unchanged; use `Supplier` for anything in Suppliers/Purchases. */
+
+export type SupplierPaymentMethod = "cash" | "cheque" | "online" | "easypaisa" | "jazzcash";
+export type ChequeStatus = "issued" | "cleared" | "bounced";
+export type PurchaseStatus = "Valid" | "Cancelled";
+
+export type Supplier = Distributor & {
+  ntn_or_cnic: string | null;
+  opening_balance: number;              // positive = we owed them as of the date below
+  opening_balance_date: string | null;  // YYYY-MM-DD
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+/** One row of the `supplier_balances` view. Powers the Suppliers list and the "Total we owe" figure. */
+export type SupplierBalance = Supplier & {
+  total_bought: number;
+  total_paid: number;
+  balance: number; // positive = we owe them, negative = they owe us (advance)
+  last_purchase_date: string | null;
+  last_payment_date: string | null;
+};
+
+/** One row of the `purchase_balances` view: the purchase bill plus what has been paid and what is still due. */
+export type PurchaseInvoice = {
+  id: string;
+  purchase_number: string;      // PB-000001
+  supplier_id: string;
+  supplier_invoice_number: string | null;
+  invoice_date: string;         // YYYY-MM-DD
+  subtotal: number;
+  discount: number;
+  freight: number;
+  total_value: number;
+  note: string | null;
+  status: PurchaseStatus;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+  created_at: string;
+  paid_total: number;
+  due_total: number;
+  payment_tag: "Paid" | "Part paid" | "Unpaid";
+};
+
+export type PurchaseItem = {
+  id: string;
+  purchase_id: string;
+  inventory_id: string;
+  description: string;  // snapshot of brand/model/specs at the time of purchase
+  quantity: number;
+  unit_cost: number;
+  line_total: number;
+  created_at: string;
+};
+
+/** A row in `supplier_payments`. The table is created in F1 (create_purchase writes to it for
+ * "paid now" purchases); the Payments screen and record/cancel functions arrive in F2. */
+export type SupplierPayment = {
+  id: string;
+  payment_number: string;       // SP-000001
+  supplier_id: string;
+  purchase_id: string | null;   // null = on-account, not tied to one bill
+  amount: number;
+  method: SupplierPaymentMethod;
+  paid_at: string;              // YYYY-MM-DD
+  reference: string | null;
+  cheque_number: string | null;
+  cheque_date: string | null;
+  bank_name: string | null;
+  cheque_status: ChequeStatus | null;
+  note: string | null;
+  status: PurchaseStatus;
+  cancel_reason: string | null;
+  created_at: string;
+};
+
+export type LedgerEntryType = "opening" | "purchase" | "payment";
+
+/** One row of the `supplier_ledger` view: an opening balance, a purchase bill, or a payment, in date
+ * order with a running balance. Positive amount/balance = we owe the supplier. */
+export type LedgerRow = {
+  supplier_id: string;
+  event_date: string;        // YYYY-MM-DD
+  event_created_at: string;
+  entry_type: LedgerEntryType;
+  entry_label: string;       // "Opening balance" / "Purchase bill" / "Payment - Cash" etc.
+  reference: string | null;  // e.g. "PB-000012 / Supplier inv 8841" or "SP-000031"
+  ref_id: string | null;
+  amount: number;            // signed: + bought, - paid
+  running_balance: number;
+};
+
+export type StockMovementReason = "opening" | "purchase" | "purchase_cancel" | "adjustment" | "sale";
+
+/** A row in `stock_movements` (decision D6): the audit trail behind every quantity change. */
+export type StockMovement = {
+  id: string;
+  inventory_id: string;
+  change: number; // +/-
+  reason: StockMovementReason;
+  ref_table: string | null;
+  ref_id: string | null;
+  note: string | null;
+  created_at: string;
+};
+
 /** One row of the suggested-price list shown when starting a new charging job. Always editable per slip. */
 export type ChargingPriceListItem = {
   id: string;
