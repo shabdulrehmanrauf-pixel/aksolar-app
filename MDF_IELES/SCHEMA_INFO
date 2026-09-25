@@ -1,0 +1,41 @@
+full_schema
+"{
+    ""enums"": [
+    ],
+    ""views"": [
+        {
+            ""view"": ""invoice_balances"",
+            ""definition"": "" SELECT i.id,\n    i.invoice_number,\n    i.invoice_type,\n    i.invoice_date,\n    i.customer_id,\n    i.buyer_name,\n    i.buyer_registration_type,\n    i.buyer_cnic_or_ntn,\n    i.buyer_address,\n    i.buyer_phone,\n    i.note,\n    i.total_value,\n    i.status,\n    i.payment_status,\n    i.created_by,\n    i.created_at,\n    i.updated_at,\n    COALESCE(p.paid, 0::numeric) AS paid_total,\n    i.total_value - COALESCE(p.paid, 0::numeric) AS due_total\n   FROM invoices i\n     LEFT JOIN ( SELECT payments.invoice_id,\n            sum(payments.amount) AS paid\n           FROM payments\n          GROUP BY payments.invoice_id) p ON p.invoice_id = i.id;""
+        },
+        {
+            ""view"": ""battery_stock_summary"",
+            ""definition"": "" SELECT 'charging'::text AS kind,\n    charging_jobs.status,\n    count(*)::integer AS count\n   FROM charging_jobs\n  WHERE charging_jobs.status = 'in_shop'::text\n  GROUP BY charging_jobs.status\nUNION ALL\n SELECT 'claim'::text AS kind,\n    battery_claims.status,\n    count(*)::integer AS count\n   FROM battery_claims\n  WHERE battery_claims.status = ANY (ARRAY['received'::text, 'sent_to_distributor'::text, 'approved'::text])\n  GROUP BY battery_claims.status;""
+        },
+        {
+            ""view"": ""battery_claims_by_distributor"",
+            ""definition"": "" SELECT d.id AS distributor_id,\n    d.name AS distributor_name,\n    c.status,\n    count(*)::integer AS count\n   FROM battery_claims c\n     JOIN distributors d ON d.id = c.distributor_id\n  WHERE c.status = ANY (ARRAY['sent_to_distributor'::text, 'approved'::text])\n  GROUP BY d.id, d.name, c.status;""
+        },
+        {
+            ""view"": ""scrap_stock_summary"",
+            ""definition"": "" SELECT count(*) FILTER (WHERE status = 'in_stock'::text) AS batches_in_stock,\n    COALESCE(sum(quantity) FILTER (WHERE status = 'in_stock'::text), 0::bigint) AS batteries_in_stock,\n    COALESCE(sum(estimated_weight_kg) FILTER (WHERE status = 'in_stock'::text), 0::numeric) AS estimated_weight_in_stock_kg,\n    count(*) FILTER (WHERE status = 'sold'::text) AS batches_sold,\n    COALESCE(sum(quantity) FILTER (WHERE status = 'sold'::text), 0::bigint) AS batteries_sold\n   FROM scrap_battery_inventory;""
+        }
+    ],
+    ""grants"": [
+        {
+            ""table"": ""inventory"",
+            ""grantee"": ""authenticated"",
+            ""privilege"": ""INSERT""
+        },
+        {
+            ""table"": ""inventory"",
+            ""grantee"": ""authenticated"",
+            ""privilege"": ""SELECT""
+        },
+        {
+            ""table"": ""inventory"",
+            ""grantee"": ""authenticated"",
+
+
+
+
+
