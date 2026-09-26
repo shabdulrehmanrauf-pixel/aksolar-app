@@ -172,6 +172,65 @@ export default function SalesClient({
     setTarget(inv);
   }
 
+  // ---------- Delete for a charging slip or a battery claim (the "otherRows" merged in above) ----------
+  // These aren't bills -- no restock checkbox, no offline draft state -- so they get their
+  // own, simpler confirm dialog rather than being squeezed into the invoice one.
+  const [otherTarget, setOtherTarget] = useState<OtherSaleRow | null>(null);
+  const [otherDelBusy, setOtherDelBusy] = useState(false);
+  const [otherDelError, setOtherDelError] = useState<string | null>(null);
+  const [removedOtherIds, setRemovedOtherIds] = useState<string[]>([]);
+
+  function askDeleteOther(row: OtherSaleRow) {
+    setOtherDelError(null);
+    setOtherTarget(row);
+  }
+
+  async function confirmDeleteOther() {
+    if (!otherTarget || otherDelBusy) return;
+    setOtherDelBusy(true);
+    setOtherDelError(null);
+
+    const online = await checkRealConnectivity();
+    if (!online) {
+      setOtherDelError("Deleting needs a connection. Try again once you're back online.");
+      setOtherDelBusy(false);
+      return;
+    }
+
+    const row = otherTarget;
+    try {
+      const supabase = await getBrowserClient();
+      const fn = row.kind === "charging" ? "delete_charging_job" : "delete_battery_claim";
+      const { error: dbError } = await supabase.rpc(fn, { p_id: row.id });
+      if (dbError) {
+        const alreadyGone = /could not be found/i.test(dbError.message);
+        if (alreadyGone) {
+          setRemovedOtherIds((ids) => [...ids, row.id]);
+          setToast(`${row.number} was already deleted.`);
+          setOtherTarget(null);
+          setOtherDelBusy(false);
+          router.refresh();
+          return;
+        }
+        setOtherDelError(
+          dbError.code === "42883" || dbError.code === "PGRST202"
+            ? "The delete setup is missing. Run 13_delete_charging_claims.sql in Supabase, then try again."
+            : dbError.message
+        );
+        setOtherDelBusy(false);
+        return;
+      }
+      setRemovedOtherIds((ids) => [...ids, row.id]);
+      setToast(`${row.number} deleted.`);
+      setOtherTarget(null);
+      setOtherDelBusy(false);
+      router.refresh();
+    } catch {
+      setOtherDelError("The connection dropped. Refresh this page to see if it was deleted before you try again.");
+      setOtherDelBusy(false);
+    }
+  }
+
   async function confirmDelete() {
     if (!target || delBusy) return;
     setDelBusy(true);
@@ -277,8 +336,8 @@ export default function SalesClient({
       ...chargingJobs.filter((c) => saleRowMatches({ number: c.slip_number, customer: c.customer_name, date: c.received_date }, query)).map(chargingToRow),
       ...batteryClaims.filter((c) => saleRowMatches({ number: c.claim_number, customer: c.customer_name, date: c.received_date }, query)).map(claimToRow),
     ];
-    return rows.sort((a, b) => b.date.localeCompare(a.date));
-  }, [includeOthers, chargingJobs, batteryClaims, query]);
+    return rows.filter((r) => !removedOtherIds.includes(r.id)).sort((a, b) => b.date.localeCompare(a.date));
+  }, [includeOthers, chargingJobs, batteryClaims, query, removedOtherIds]);
 
   const otherTotal = otherRows.reduce((s, r) => s + r.total, 0);
   const mergedCount = shown.length + otherRows.length;
@@ -465,15 +524,26 @@ export default function SalesClient({
                           </span>
                         </td>
                         <td className="px-3 py-3.5 text-right">
-                          <Link
-                            href={row.href}
-                            target="_blank"
-                            aria-label={`Open ${row.kind === "charging" ? "charging slip" : "claim slip"} ${row.number}`}
-                            title="Open slip"
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-lead hover:bg-plate"
-                          >
-                            <Icon name="chevron" className="h-4 w-4" />
-                          </Link>
+                          <div className="inline-flex items-center gap-1">
+                            <Link
+                              href={row.href}
+                              target="_blank"
+                              aria-label={`Open ${row.kind === "charging" ? "charging slip" : "claim slip"} ${row.number}`}
+                              title="Open slip"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-lead hover:bg-plate"
+                            >
+                              <Icon name="chevron" className="h-4 w-4" />
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => askDeleteOther(row)}
+                              aria-label={`Delete ${row.kind === "charging" ? "charging slip" : "claim"} ${row.number}`}
+                              title="Delete"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-lead hover:bg-terminal/10 hover:text-terminal-deep"
+                            >
+                              <Icon name="trash" className="h-5 w-5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -575,6 +645,14 @@ export default function SalesClient({
                       </span>
                       <Icon name="chevron" className="h-4 w-4 text-lead/60" />
                     </Link>
+                    <button
+                      type="button"
+                      onClick={() => askDeleteOther(row)}
+                      aria-label={`Delete ${row.kind === "charging" ? "charging slip" : "claim"} ${row.number}`}
+                      className="card inline-flex w-12 shrink-0 items-center justify-center text-lead hover:bg-terminal/10 hover:text-terminal-deep"
+                    >
+                      <Icon name="trash" className="h-5 w-5" />
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -629,6 +707,39 @@ export default function SalesClient({
               </button>
               <button type="button" onClick={confirmDelete} disabled={delBusy} className="btn btn-danger">
                 {delBusy ? "Deleting" : target.pending ? "Discard draft" : "Delete bill"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {otherTarget && (
+        <div className="anim-fade fixed inset-0 z-50 flex items-center justify-center bg-casing/60 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="del-other-title"
+            aria-describedby="del-other-text"
+            className="anim-pop w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+          >
+            <h2 id="del-other-title" className="font-display text-2xl font-bold">
+              Delete {otherTarget.number}?
+            </h2>
+            <p id="del-other-text" className="mt-2 text-lead">
+              This permanently deletes the {otherTarget.kind === "charging" ? "charging slip" : "battery claim"} for{" "}
+              {otherTarget.customer} ({formatRs(otherTarget.total)}). It cannot be undone.
+            </p>
+            {otherDelError && (
+              <p role="alert" className="mt-4 rounded-xl bg-terminal/10 px-3 py-2 text-sm text-terminal-deep">
+                {otherDelError}
+              </p>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setOtherTarget(null)} disabled={otherDelBusy} autoFocus className="btn btn-quiet">
+                Keep it
+              </button>
+              <button type="button" onClick={confirmDeleteOther} disabled={otherDelBusy} className="btn btn-danger">
+                {otherDelBusy ? "Deleting" : otherTarget.kind === "charging" ? "Delete slip" : "Delete claim"}
               </button>
             </div>
           </div>
