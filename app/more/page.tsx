@@ -10,10 +10,10 @@ import { createClient } from "@/lib/supabase/server";
 export const metadata: Metadata = { title: "More" };
 
 // Only shortcuts to screens that exist. Import/Export and Settings will be added with their phases.
-// Customers, Suppliers, Purchases and Payments live here rather than on the phone bottom bar:
-// decision D7 gave the bottom bar's center slot to the "+" quick-actions button instead, which
+// Customers, Suppliers, Purchases, Payments and Expenses live here rather than on the phone bottom
+// bar: decision D7 gave the bottom bar's center slot to the "+" quick-actions button instead, which
 // only fit by moving Customers off its own icon (still one tap away, here) -- Suppliers/Purchases
-// (F1) and Payments (F2) are new since then and were never on the bar to begin with.
+// (F1), Payments (F2) and Expenses (F3) are new since then and were never on the bar to begin with.
 const SHORTCUTS: { href: string; label: string; hint: string; icon: IconName; tone: string }[] = [
   { href: "/assistant", label: "Assistant", hint: "Ask about stock, sales or customers", icon: "sparkle", tone: "bg-sun/25 text-amber-800" },
   { href: "/sales/new", label: "New bill", hint: "Make a sale and take payment", icon: "receipt", tone: "bg-sun/25 text-amber-800" },
@@ -23,6 +23,8 @@ const SHORTCUTS: { href: string; label: string; hint: string; icon: IconName; to
   { href: "/suppliers", label: "Suppliers", hint: "Who you buy from, and what you owe", icon: "truck", tone: "bg-lead/10 text-casing" },
   { href: "/purchases", label: "Purchase bills", hint: "Stock received, by supplier", icon: "cart", tone: "bg-cell/10 text-cell" },
   { href: "/payments", label: "Payments", hint: "Every payment made to suppliers", icon: "banknote", tone: "bg-lead/10 text-casing" },
+  { href: "/expenses?add=1", label: "Add expense", hint: "Log rent, salaries, fuel, or any other cost", icon: "minus", tone: "bg-terminal/10 text-terminal-deep" },
+  { href: "/expenses", label: "Expenses", hint: "Every business expense, by category", icon: "minus", tone: "bg-lead/10 text-casing" },
   { href: "/customers", label: "Customers", hint: "Every saved customer", icon: "users", tone: "bg-focus/10 text-focus" },
   { href: "/reports", label: "Reports", hint: "Sales, cash closing and best sellers", icon: "chart", tone: "bg-focus/10 text-focus" },
   { href: "/inventory?add=1", label: "Add item", hint: "Add a battery, panel or accessory", icon: "plus", tone: "bg-cell/10 text-cell" },
