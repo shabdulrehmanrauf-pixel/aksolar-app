@@ -115,6 +115,11 @@ export default function SupplierLedger({
           <Link href={`/purchases/new?supplier=${supplier.id}`} className="on-dark btn btn-primary">
             <Icon name="truck" className="h-5 w-5" /> Receive stock
           </Link>
+          {supplier.balance > 0 && (
+            <Link href={`/payments/new?supplier=${supplier.id}`} className="on-dark btn border border-white/20 bg-white/10 text-white hover:bg-white/20">
+              <Icon name="banknote" className="h-5 w-5" /> Make payment
+            </Link>
+          )}
           {supplier.phone && (
             <a href={`tel:${supplier.phone}`} className="on-dark btn border border-white/20 bg-white/10 text-white hover:bg-white/20">
               <Icon name="phone" className="h-5 w-5" /> Call
