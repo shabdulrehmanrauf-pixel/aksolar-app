@@ -81,29 +81,80 @@ export default function BatteryServicesClient({
   const [toast, setToast] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // ---------- Delete a charging job or a battery claim (a wrong/demo slip) ----------
+  const [deleteTarget, setDeleteTarget] = useState<
+    { kind: "charging"; job: ChargingJob } | { kind: "claim"; claim: BatteryClaim } | null
+  >(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [hiddenIds, setHiddenIds] = useState<string[]>([]);
+
+  async function confirmDelete() {
+    if (!deleteTarget || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    const id = deleteTarget.kind === "charging" ? deleteTarget.job.id : deleteTarget.claim.id;
+    const label = deleteTarget.kind === "charging" ? deleteTarget.job.slip_number : deleteTarget.claim.claim_number;
+    const fn = deleteTarget.kind === "charging" ? "delete_charging_job" : "delete_battery_claim";
+    try {
+      const supabase = await getBrowserClient();
+      const { error } = await supabase.rpc(fn, { p_id: id });
+      if (error) {
+        const alreadyGone = /could not be found/i.test(error.message);
+        if (alreadyGone) {
+          setHiddenIds((ids) => [...ids, id]);
+          setToast(`${label} was already deleted.`);
+          setDeleteTarget(null);
+          setDeleteBusy(false);
+          router.refresh();
+          return;
+        }
+        setDeleteError(
+          error.code === "42883" || error.code === "PGRST202"
+            ? "The delete setup is missing. Run 13_delete_charging_claims.sql in Supabase, then try again."
+            : error.message
+        );
+        setDeleteBusy(false);
+        return;
+      }
+      setHiddenIds((ids) => [...ids, id]);
+      setToast(`${label} deleted.`);
+      setDeleteTarget(null);
+      setDeleteBusy(false);
+      router.refresh();
+    } catch {
+      setDeleteError("The connection dropped. Refresh this page to see if it was deleted before you try again.");
+      setDeleteBusy(false);
+    }
+  }
+
   const today = todayKarachi();
 
   const visibleJobs = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return jobs;
-    return jobs.filter((j) =>
-      [j.slip_number, j.customer_name, j.customer_phone ?? "", j.battery_brand, j.battery_model, j.battery_number ?? ""]
-        .join(" ")
-        .toLowerCase()
-        .includes(q)
-    );
-  }, [jobs, query]);
+    return jobs
+      .filter((j) => !hiddenIds.includes(j.id))
+      .filter((j) =>
+        !q ||
+        [j.slip_number, j.customer_name, j.customer_phone ?? "", j.battery_brand, j.battery_model, j.battery_number ?? ""]
+          .join(" ")
+          .toLowerCase()
+          .includes(q)
+      );
+  }, [jobs, query, hiddenIds]);
 
   const visibleClaims = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return claims;
-    return claims.filter((c) =>
-      [c.claim_number, c.customer_name, c.customer_phone ?? "", c.battery_brand, c.battery_model, c.battery_number ?? ""]
-        .join(" ")
-        .toLowerCase()
-        .includes(q)
-    );
-  }, [claims, query]);
+    return claims
+      .filter((c) => !hiddenIds.includes(c.id))
+      .filter((c) =>
+        !q ||
+        [c.claim_number, c.customer_name, c.customer_phone ?? "", c.battery_brand, c.battery_model, c.battery_number ?? ""]
+          .join(" ")
+          .toLowerCase()
+          .includes(q)
+      );
+  }, [claims, query, hiddenIds]);
 
   const distributorName = (id: string | null) => distributors.find((d) => d.id === id)?.name ?? null;
 
@@ -381,6 +432,16 @@ export default function BatteryServicesClient({
                           </button>
                         </>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleteTarget({ kind: "charging", job });
+                        }}
+                        className="btn btn-quiet btn-sm text-terminal-deep"
+                      >
+                        <Icon name="trash" className="h-4 w-4" /> Delete
+                      </button>
                     </div>
                   </li>
                 );
@@ -458,6 +519,16 @@ export default function BatteryServicesClient({
                         <Icon name="chevron" className="h-4 w-4" /> Move status
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteError(null);
+                        setDeleteTarget({ kind: "claim", claim });
+                      }}
+                      className="btn btn-quiet btn-sm text-terminal-deep"
+                    >
+                      <Icon name="trash" className="h-4 w-4" /> Delete
+                    </button>
                   </div>
                 </li>
               );
@@ -495,6 +566,40 @@ export default function BatteryServicesClient({
 
       {handoverTarget && (
         <ChargingHandoverForm job={handoverTarget} onClose={() => setHandoverTarget(null)} onSaved={onHandoverSaved} />
+      )}
+
+      {deleteTarget && (
+        <div className="anim-fade fixed inset-0 z-50 flex items-center justify-center bg-casing/60 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="del-bs-title"
+            aria-describedby="del-bs-text"
+            className="anim-pop w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+          >
+            <h2 id="del-bs-title" className="font-display text-2xl font-bold">
+              Delete {deleteTarget.kind === "charging" ? deleteTarget.job.slip_number : deleteTarget.claim.claim_number}?
+            </h2>
+            <p id="del-bs-text" className="mt-2 text-lead">
+              This permanently deletes this {deleteTarget.kind === "charging" ? "charging slip" : "battery claim"} for{" "}
+              {deleteTarget.kind === "charging" ? deleteTarget.job.customer_name : deleteTarget.claim.customer_name}. It
+              cannot be undone.
+            </p>
+            {deleteError && (
+              <p role="alert" className="mt-4 rounded-xl bg-terminal/10 px-3 py-2 text-sm text-terminal-deep">
+                {deleteError}
+              </p>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setDeleteTarget(null)} disabled={deleteBusy} autoFocus className="btn btn-quiet">
+                Keep it
+              </button>
+              <button type="button" onClick={confirmDelete} disabled={deleteBusy} className="btn btn-danger">
+                {deleteBusy ? "Deleting" : deleteTarget.kind === "charging" ? "Delete slip" : "Delete claim"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <Toast message={toast} />
