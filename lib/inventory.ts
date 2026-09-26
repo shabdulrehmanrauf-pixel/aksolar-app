@@ -18,6 +18,7 @@ export const PANEL_TYPES = [
 export const ACCESSORY_TYPES = [
   "UPS",
   "Inverter",
+  "Solar inverter",
   "Battery water",
   "Battery charger",
   "Charge controller",
@@ -25,6 +26,18 @@ export const ACCESSORY_TYPES = [
   "MC4 connector",
   "Mounting structure",
   "Battery terminal",
+  "Battery clamp",
+  "Battery trolley",
+  "Battery stand",
+  "Voltage stabilizer (AVR)",
+  "Distribution box (DB)",
+  "Junction box",
+  "Circuit breaker (MCB)",
+  "Fuse",
+  "Earthing kit",
+  "Net metering kit",
+  "Battery tester",
+  "Extension board",
 ];
 
 /** The stock-type options shown under a category (Batteries: Lithium, Tubular ...). */
