@@ -183,6 +183,13 @@ export type SupplierPayment = {
   created_at: string;
 };
 
+/** One row of the `payment_details` view (Phase F2): a supplier payment with the supplier's name and,
+ * if it was made against one specific bill, that bill's number, already joined in. */
+export type PaymentDetails = SupplierPayment & {
+  supplier_name: string;
+  purchase_number: string | null;
+};
+
 export type LedgerEntryType = "opening" | "purchase" | "payment";
 
 /** One row of the `supplier_ledger` view: an opening balance, a purchase bill, or a payment, in date
