@@ -21,8 +21,10 @@ const delay = (i: number) => ({ "--i": i }) as React.CSSProperties;
 const QUICK_TILES: { href: string; label: string; icon: IconName; tone: string }[] = [
   { href: "/sales/new", label: "New bill", icon: "receipt", tone: "from-yellow-400 to-amber-600 shadow-amber-600/35" },
   { href: "/sales", label: "Sales", icon: "banknote", tone: "from-teal-500 to-cyan-700 shadow-teal-700/30" },
+  { href: "/purchases", label: "Purchases", icon: "cart", tone: "from-orange-500 to-red-700 shadow-orange-600/35" },
   { href: "/inventory", label: "Stock", icon: "battery", tone: "from-amber-400 to-orange-500 shadow-amber-500/35" },
   { href: "/customers", label: "Customers", icon: "users", tone: "from-sky-500 to-blue-700 shadow-blue-600/30" },
+  { href: "/suppliers", label: "Suppliers", icon: "truck", tone: "from-indigo-500 to-violet-700 shadow-indigo-600/30" },
   { href: "/inventory?add=1", label: "Add item", icon: "plus", tone: "from-emerald-500 to-green-700 shadow-green-700/30" },
   { href: "/customers?add=1", label: "Add customer", icon: "userplus", tone: "from-violet-500 to-indigo-700 shadow-indigo-600/30" },
   { href: "/battery-services?tab=claims", label: "Claim", icon: "shield", tone: "from-rose-500 to-pink-700 shadow-rose-600/30" },
