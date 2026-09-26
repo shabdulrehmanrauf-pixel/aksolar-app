@@ -206,13 +206,32 @@ export default function ItemForm({
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Panel/accessory "type" is normally a dropdown of the presets below, but existing items can carry
+  // a custom value typed in before -- start in "Other" mode so that value isn't silently hidden.
+  const [otherType, setOtherType] = useState(() => {
+    const initial = initialState(item);
+    const options = initial.category === "panel" ? PANEL_TYPES : initial.category === "accessory" ? ACCESSORY_TYPES : [];
+    return initial.type !== "" && !options.includes(initial.type);
+  });
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
   function changeCategory(category: Category) {
     setForm((prev) => ({ ...prev, category, type: "" }));
+    setOtherType(false);
     setErrors({});
+  }
+
+  const OTHER_TYPE = "__other__";
+  function changeType(value: string) {
+    if (value === OTHER_TYPE) {
+      setOtherType(true);
+      set("type", "");
+    } else {
+      setOtherType(false);
+      set("type", value);
+    }
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -363,15 +382,44 @@ export default function ItemForm({
               </>
             ) : (
               <div className="grid grid-cols-2 gap-4">
-                <TextField
-                  id="type"
-                  label={form.category === "panel" ? "Panel type" : "Kind of accessory"}
-                  value={form.type}
-                  onChange={(v) => set("type", v)}
-                  error={errors.type}
-                  list="type-options"
-                  hint="Pick a suggestion or type your own."
-                />
+                <div>
+                  <label htmlFor="type" className="mb-1.5 block text-sm font-medium">
+                    {form.category === "panel" ? "Panel type" : "Kind of accessory"}
+                  </label>
+                  <select
+                    id="type"
+                    value={otherType ? OTHER_TYPE : form.type}
+                    onChange={(e) => changeType(e.target.value)}
+                    aria-invalid={errors.type ? true : undefined}
+                    aria-describedby={errors.type ? "type-error" : undefined}
+                    className="input"
+                  >
+                    <option value="">Choose a type</option>
+                    {typeOptions.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                    <option value={OTHER_TYPE}>Other (type your own)</option>
+                  </select>
+                  {otherType && (
+                    <input
+                      id="type-other"
+                      type="text"
+                      autoFocus
+                      autoComplete="off"
+                      value={form.type}
+                      onChange={(e) => set("type", e.target.value)}
+                      placeholder="Type it in"
+                      className="input mt-2"
+                    />
+                  )}
+                  {errors.type && (
+                    <p id="type-error" className="mt-1 text-sm text-terminal-deep">
+                      {errors.type}
+                    </p>
+                  )}
+                </div>
                 {form.category === "panel" && (
                   <TextField
                     id="wattage"
@@ -382,11 +430,6 @@ export default function ItemForm({
                     inputMode="numeric"
                   />
                 )}
-                <datalist id="type-options">
-                  {typeOptions.map((t) => (
-                    <option key={t} value={t} />
-                  ))}
-                </datalist>
               </div>
             )}
 
