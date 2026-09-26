@@ -62,3 +62,34 @@ export type ReportSummary = {
   daily: { day: string; sales: number; count: number }[];
   top_items: { description: string; quantity: number; revenue: number }[];
 };
+
+/* ---------- F4: cash book + the rest of the Reports totals ---------- */
+
+/** From `cash_book_summary(from, to)` -- 15_cash_book.sql. All figures are "cash" (method = 'cash')
+ * only: a cheque, bank transfer, EasyPaisa or JazzCash movement never appears here. */
+export type CashBookSummary = {
+  opening_balance_as_of: string; // YYYY-MM-DD, the owner's saved "as of" date
+  opening_for_period: number;    // that balance, rolled forward to the start of the requested period
+  cash_sales: number;
+  other_cash_income: number;
+  other_cash_income_breakdown: { scrap: number; charging: number; claims: number };
+  cash_paid_to_suppliers: number;
+  cash_expenses: number;
+  closing_balance: number;       // cash in hand at the end of the period
+};
+
+/** From `financial_summary(from, to)` -- 15_cash_book.sql. Combine with ReportSummary.gross_profit to
+ * get Net profit: gross_profit - (expenses_total - expenses_excluded_total). */
+export type FinancialSummary = {
+  expenses_total: number;
+  expenses_excluded_total: number; // "Owner withdrawal" -- counted in the cash book, not in Net profit
+  purchases_total: number;
+  paid_to_suppliers_total: number;
+  we_owe_total: number;   // point-in-time (now), not period-bound -- same as "Udhaar to collect"
+  we_owe_count: number;
+};
+
+/** Net profit = gross profit (from sales) minus expenses, excluding Owner withdrawal rows. */
+export function netProfit(gross_profit: number, financial: FinancialSummary): number {
+  return gross_profit - (financial.expenses_total - financial.expenses_excluded_total);
+}
