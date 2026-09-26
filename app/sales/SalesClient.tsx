@@ -7,12 +7,14 @@ import Icon from "@/components/Icons";
 import PageHeader from "@/components/PageHeader";
 import { formatRs } from "@/lib/format";
 import { formatDay, friendlyInvoiceError, invoiceMatches } from "@/lib/invoices";
+import { chargingStatusLabel } from "@/lib/chargingJobs";
+import { claimStatusLabel } from "@/lib/batteryClaims";
 import { getBrowserClient } from "@/lib/supabase/lazy";
 import { offlineDb, type LocalInvoice } from "@/lib/offline/db";
 import { useLiveQuery } from "@/lib/offline/useLiveQuery";
 import { checkRealConnectivity, isBrowserOnline } from "@/lib/offline/net";
 import { notifySyncListeners } from "@/lib/offline/sync";
-import type { Invoice } from "@/lib/types";
+import type { BatteryClaimStatus, ChargingJobStatus, Invoice } from "@/lib/types";
 import Toast from "@/components/Toast";
 import PayBadge from "./PayBadge";
 
@@ -24,15 +26,86 @@ const TABS: { value: Filter; label: string }[] = [
   { value: "paid", label: "Paid" },
 ];
 
+/** A charging slip, shaped for the merged Sales list. Every slip is a sale -- the price is
+ * quoted the moment it's created, whatever happens to the battery afterwards. */
+export type ChargingSaleRow = {
+  id: string;
+  slip_number: string;
+  customer_name: string;
+  customer_phone: string | null;
+  price: number;
+  received_date: string;
+  status: ChargingJobStatus;
+};
+
+/** A battery claim, shaped for the merged Sales list. Only claims with a real extra_charges
+ * amount are passed in here -- a plain warranty exchange is never a "sale". */
+export type ClaimSaleRow = {
+  id: string;
+  claim_number: string;
+  customer_name: string;
+  customer_phone: string | null;
+  extra_charges: number;
+  received_date: string;
+  status: BatteryClaimStatus;
+};
+
+/** One merged row for a charging slip or a claim with charges, normalised so the same table
+ * markup can render either one next to the invoice rows. */
+type OtherSaleRow =
+  | { kind: "charging"; id: string; number: string; date: string; customer: string; total: number; href: string; statusLabel: string }
+  | { kind: "claim"; id: string; number: string; date: string; customer: string; total: number; href: string; statusLabel: string };
+
+function chargingToRow(c: ChargingSaleRow): OtherSaleRow {
+  return {
+    kind: "charging",
+    id: c.id,
+    number: c.slip_number,
+    date: c.received_date,
+    customer: c.customer_name,
+    total: c.price,
+    href: `/print/charging/${c.id}`,
+    statusLabel: chargingStatusLabel(c.status),
+  };
+}
+
+function claimToRow(c: ClaimSaleRow): OtherSaleRow {
+  return {
+    kind: "claim",
+    id: c.id,
+    number: c.claim_number,
+    date: c.received_date,
+    customer: c.customer_name,
+    total: c.extra_charges,
+    href: `/print/claim/${c.id}`,
+    statusLabel: claimStatusLabel(c.status),
+  };
+}
+
+/** Same idea as invoiceMatches, for the non-invoice rows merged into the "All" view. */
+function saleRowMatches(row: { number: string; customer: string; date: string }, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const hay = [row.number, row.customer, row.date, formatDay(row.date)].join(" ").toLowerCase();
+  return q.split(/\s+/).every((w) => hay.includes(w));
+}
+
 export default function SalesClient({
   invoices: serverInvoices,
+  chargingJobs = [],
+  batteryClaims = [],
   initialFilter,
 }: {
   invoices: Invoice[];
+  chargingJobs?: ChargingSaleRow[];
+  batteryClaims?: ClaimSaleRow[];
   initialFilter: Filter;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>(initialFilter);
+  // Charging slips and battery-claim charges only show up under "All" -- "Udhaar due" and "Paid"
+  // are bill-specific ideas that don't apply to them, so mixing them in there would be confusing.
+  const includeOthers = filter === "all";
   const router = useRouter();
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [target, setTarget] = useState<LocalInvoice | null>(null);
@@ -157,11 +230,29 @@ export default function SalesClient({
   const totalShown = shown.filter((i) => i.status !== "Cancelled").reduce((s, i) => s + i.total_value, 0);
   const dueShown = shown.filter((i) => i.status !== "Cancelled").reduce((s, i) => s + i.due_total, 0);
 
+  // Charging slips + battery-claim charges, merged in only for the "All" tab.
+  const otherRows = useMemo(() => {
+    if (!includeOthers) return [];
+    const rows = [
+      ...chargingJobs.filter((c) => saleRowMatches({ number: c.slip_number, customer: c.customer_name, date: c.received_date }, query)).map(chargingToRow),
+      ...batteryClaims.filter((c) => saleRowMatches({ number: c.claim_number, customer: c.customer_name, date: c.received_date }, query)).map(claimToRow),
+    ];
+    return rows.sort((a, b) => b.date.localeCompare(a.date));
+  }, [includeOthers, chargingJobs, batteryClaims, query]);
+
+  const otherTotal = otherRows.reduce((s, r) => s + r.total, 0);
+  const mergedCount = shown.length + otherRows.length;
+  const mergedTotal = totalShown + otherTotal;
+
   return (
     <div>
       <PageHeader
         title="Sales"
-        subtitle={visible.length === 0 ? "Your bills will appear here." : `${visible.length} bills saved`}
+        subtitle={
+          visible.length === 0 && chargingJobs.length === 0 && batteryClaims.length === 0
+            ? "Your bills will appear here."
+            : `${visible.length + chargingJobs.length + batteryClaims.length} sale entries saved`
+        }
         action={
           <Link href="/sales/new" className="btn btn-primary">
             <Icon name="plus" className="h-5 w-5" /> New bill
@@ -169,7 +260,7 @@ export default function SalesClient({
         }
       />
 
-      {visible.length === 0 ? (
+      {visible.length === 0 && chargingJobs.length === 0 && batteryClaims.length === 0 ? (
         <section className="card anim-rise mt-6 px-6 py-12 text-center">
           <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-sun/25 text-amber-800">
             <Icon name="receipt" className="h-7 w-7" />
@@ -186,18 +277,18 @@ export default function SalesClient({
         <>
           <div className="anim-rise mt-5 flex flex-col gap-3 sm:flex-row sm:items-center" style={{ "--i": 1 } as React.CSSProperties}>
             <label className="relative block w-full sm:max-w-md">
-              <span className="sr-only">Search bills</span>
+              <span className="sr-only">Search sale entries</span>
               <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-lead" />
               <input
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search customer, bill number or date"
+                placeholder="Search customer, bill/slip number or date"
                 className="input pl-11"
                 autoComplete="off"
               />
             </label>
-            <div role="group" aria-label="Filter bills" className="flex gap-2">
+            <div role="group" aria-label="Filter sale entries" className="flex gap-2">
               {TABS.map((t) => (
                 <button
                   key={t.value}
@@ -215,13 +306,16 @@ export default function SalesClient({
           </div>
 
           <p className="mt-3 text-sm text-lead" aria-live="polite">
-            {shown.length} {shown.length === 1 ? "bill" : "bills"} · {formatRs(totalShown)}
+            {mergedCount} {mergedCount === 1 ? "entry" : "entries"} · {formatRs(mergedTotal)}
             {dueShown > 0 && <span className="font-semibold text-terminal-deep"> · {formatRs(dueShown)} still due</span>}
+            {includeOthers && otherRows.length > 0 && (
+              <span className="text-lead"> · includes {otherRows.length} charging/claim {otherRows.length === 1 ? "entry" : "entries"}</span>
+            )}
           </p>
 
-          {shown.length === 0 ? (
+          {mergedCount === 0 ? (
             <div className="card mt-4 px-6 py-10 text-center">
-              <p className="font-display text-2xl font-semibold">No bills match</p>
+              <p className="font-display text-2xl font-semibold">No sale entries match</p>
               <p className="mt-1 text-lead">Check the spelling, or clear the search.</p>
               <button
                 type="button"
@@ -242,6 +336,7 @@ export default function SalesClient({
                   <thead className="bg-plate/70 text-sm text-lead">
                     <tr>
                       <th className="px-5 py-3 font-medium">Bill</th>
+                      <th className="px-3 py-3 font-medium">Type</th>
                       <th className="px-3 py-3 font-medium">Date</th>
                       <th className="px-3 py-3 font-medium">Customer</th>
                       <th className="px-3 py-3 text-right font-medium">Total</th>
@@ -267,6 +362,7 @@ export default function SalesClient({
                             </Link>
                           )}
                         </td>
+                        <td className="px-3 py-3.5 text-lead">Invoice</td>
                         <td className="px-3 py-3.5 tabular-nums text-lead">{formatDay(inv.invoice_date)}</td>
                         <td className="max-w-[16rem] truncate px-3 py-3.5 font-medium">{inv.buyer_name}</td>
                         <td className="px-3 py-3.5 text-right font-semibold tabular-nums">{formatRs(inv.total_value)}</td>
@@ -290,6 +386,36 @@ export default function SalesClient({
                           >
                             <Icon name="trash" className="h-5 w-5" />
                           </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {otherRows.map((row) => (
+                      <tr key={`${row.kind}-${row.id}`} className="transition-colors hover:bg-plate/50">
+                        <td className="px-5 py-3.5">
+                          <Link href={row.href} target="_blank" className="font-semibold text-focus hover:underline">
+                            {row.number}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-3.5 text-lead">{row.kind === "charging" ? "Charging" : "Claim charge"}</td>
+                        <td className="px-3 py-3.5 tabular-nums text-lead">{formatDay(row.date)}</td>
+                        <td className="max-w-[16rem] truncate px-3 py-3.5 font-medium">{row.customer}</td>
+                        <td className="px-3 py-3.5 text-right font-semibold tabular-nums">{formatRs(row.total)}</td>
+                        <td className="px-3 py-3.5 text-right text-lead">-</td>
+                        <td className="px-5 py-3.5">
+                          <span className="inline-flex rounded-full bg-plate px-2.5 py-1 text-xs font-semibold text-lead">
+                            {row.statusLabel}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3.5 text-right">
+                          <Link
+                            href={row.href}
+                            target="_blank"
+                            aria-label={`Open ${row.kind === "charging" ? "charging slip" : "claim slip"} ${row.number}`}
+                            title="Open slip"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-lead hover:bg-plate"
+                          >
+                            <Icon name="chevron" className="h-4 w-4" />
+                          </Link>
                         </td>
                       </tr>
                     ))}
@@ -354,6 +480,31 @@ export default function SalesClient({
                     </li>
                   );
                 })}
+                {otherRows.map((row) => (
+                  <li key={`${row.kind}-${row.id}`} className="flex items-stretch gap-2">
+                    <Link href={row.href} target="_blank" className="card card-hover flex min-w-0 flex-1 items-center gap-3 p-4">
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className="truncate font-semibold">{row.customer}</span>
+                        </span>
+                        <span className="mt-0.5 block text-sm text-lead">
+                          {row.kind === "charging" ? "Charging" : "Claim charge"} · {row.number} · {formatDay(row.date)}
+                        </span>
+                        <span className="mt-1.5 block">
+                          <span className="inline-flex rounded-full bg-plate px-2.5 py-1 text-xs font-semibold text-lead">
+                            {row.statusLabel}
+                          </span>
+                        </span>
+                      </span>
+                      <span className="text-right">
+                        <span className="block font-display text-2xl font-semibold leading-none tabular-nums">
+                          {formatRs(row.total)}
+                        </span>
+                      </span>
+                      <Icon name="chevron" className="h-4 w-4 text-lead/60" />
+                    </Link>
+                  </li>
+                ))}
               </ul>
               {visible.length >= 1000 && (
                 <p className="mt-3 text-sm text-lead">Showing the latest 1,000 bills.</p>
