@@ -10,10 +10,18 @@ import { createClient } from "@/lib/supabase/server";
 export const metadata: Metadata = { title: "More" };
 
 // Only shortcuts to screens that exist. Import/Export and Settings will be added with their phases.
+// Customers, Suppliers and Purchases live here rather than on the phone bottom bar: decision D7
+// gave the bottom bar's center slot to the "+" quick-actions button instead, which only fit by
+// moving Customers off its own icon (still one tap away, here) -- Suppliers/Purchases are new in
+// F1 and were never on the bar to begin with.
 const SHORTCUTS: { href: string; label: string; hint: string; icon: IconName; tone: string }[] = [
   { href: "/assistant", label: "Assistant", hint: "Ask about stock, sales or customers", icon: "sparkle", tone: "bg-sun/25 text-amber-800" },
   { href: "/sales/new", label: "New bill", hint: "Make a sale and take payment", icon: "receipt", tone: "bg-sun/25 text-amber-800" },
   { href: "/sales?filter=due", label: "Udhaar to collect", hint: "Bills that are not fully paid", icon: "banknote", tone: "bg-terminal/10 text-terminal" },
+  { href: "/purchases/new", label: "Receive stock", hint: "Record a new purchase bill", icon: "truck", tone: "bg-focus/10 text-focus" },
+  { href: "/suppliers", label: "Suppliers", hint: "Who you buy from, and what you owe", icon: "truck", tone: "bg-lead/10 text-casing" },
+  { href: "/purchases", label: "Purchase bills", hint: "Stock received, by supplier", icon: "cart", tone: "bg-cell/10 text-cell" },
+  { href: "/customers", label: "Customers", hint: "Every saved customer", icon: "users", tone: "bg-focus/10 text-focus" },
   { href: "/reports", label: "Reports", hint: "Sales, cash closing and best sellers", icon: "chart", tone: "bg-focus/10 text-focus" },
   { href: "/inventory?add=1", label: "Add item", hint: "Add a battery, panel or accessory", icon: "plus", tone: "bg-cell/10 text-cell" },
   { href: "/customers?add=1", label: "Add customer", hint: "Save a new customer", icon: "userplus", tone: "bg-focus/10 text-focus" },
