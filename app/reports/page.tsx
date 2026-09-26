@@ -5,9 +5,10 @@ import PageHeader from "@/components/PageHeader";
 import { formatRs, formatRsCompact } from "@/lib/format";
 import { addDays, todayKarachi } from "@/lib/invoices";
 import { isLow } from "@/lib/inventory";
-import { parseRange, periodFor, RANGES, type ReportSummary } from "@/lib/reports";
+import { netProfit, parseRange, periodFor, RANGES, type CashBookSummary, type FinancialSummary, type ReportSummary } from "@/lib/reports";
 import { createClient } from "@/lib/supabase/server";
 import type { InventoryItem } from "@/lib/types";
+import CashBookCard from "./CashBookCard";
 import SalesChart from "./SalesChart";
 
 export const metadata: Metadata = { title: "Reports" };
@@ -29,13 +30,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   // For a single day the chart shows the 14 days up to it, so it is not one lonely bar.
   const chartFrom = period.singleDay ? addDays(period.to, -13) : period.from;
-  const [summaryRes, chartRes, stockRes, moneyRes] = await Promise.all([
+  const [summaryRes, chartRes, stockRes, moneyRes, cashBookRes, financeRes] = await Promise.all([
     supabase.rpc("report_summary", { p_from: period.from, p_to: period.to, p_bucket: period.bucket }),
     period.singleDay
       ? supabase.rpc("report_summary", { p_from: chartFrom, p_to: period.to, p_bucket: "day" })
       : Promise.resolve(null),
     supabase.from("inventory").select("quantity,reorder_level,cost_price,sale_price"),
     supabase.rpc("money_summary", { p_day: today }),
+    supabase.rpc("cash_book_summary", { p_from: period.from, p_to: period.to }),
+    supabase.rpc("financial_summary", { p_from: period.from, p_to: period.to }),
   ]);
 
   if (summaryRes.error) {
@@ -63,6 +66,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const owedCount = (moneyRes.data as { udhaar_total: number; udhaar_count: number } | null)?.udhaar_count ?? 0;
   const maxRevenue = Math.max(...s.top_items.map((t) => t.revenue), 1);
   const avgBill = s.invoice_count > 0 ? s.sales_total / s.invoice_count : 0;
+
+  const cashBook = (cashBookRes.error ? null : cashBookRes.data) as CashBookSummary | null;
+  const finance = (financeRes.error ? null : financeRes.data) as FinancialSummary | null;
+  const profit = finance ? netProfit(s.gross_profit, finance) : null;
 
   const hero: { label: string; value: string; icon: IconName; chip: string }[] = [
     { label: "Total sales", value: formatRsCompact(s.sales_total), icon: "receipt", chip: "bg-sun/25 text-sun" },
@@ -126,12 +133,46 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             />
           </dl>
           <p className="mt-2 text-sm text-lead">
-            This is money received, not cash in hand. Expenses and opening balance are not tracked yet.
+            This is money received on bills, not cash in hand -- see the cash book below for that.
           </p>
         </section>
 
+        {/* Cash book (F4) */}
+        <CashBookCard cashBook={cashBook} singleDay={period.singleDay} />
+
+        {/* Financials (F4) */}
+        <section className="card anim-rise p-5" style={{ "--i": 4 } as React.CSSProperties}>
+          <h2 className="font-display text-2xl font-semibold">Expenses &amp; profit</h2>
+          <p className="text-sm text-lead">Every payment method, for this period.</p>
+          {finance ? (
+            <dl className="mt-2 divide-y divide-line/60">
+              <Row label="Purchases (stock received)" value={formatRs(finance.purchases_total)} />
+              <Row label="Paid to suppliers" value={formatRs(finance.paid_to_suppliers_total)} />
+              <Row label="Expenses" value={formatRs(finance.expenses_total)} />
+              {finance.expenses_excluded_total > 0 && (
+                <p className="py-1 pl-1 text-sm text-lead">
+                  Of which {formatRs(finance.expenses_excluded_total)} is owner withdrawal (left out of net profit).
+                </p>
+              )}
+              <Row
+                label="Net profit"
+                value={formatRs(profit ?? 0)}
+                strong
+                tone={(profit ?? 0) < 0 ? "text-terminal-deep" : "text-cell-deep"}
+              />
+            </dl>
+          ) : (
+            <p className="mt-2 text-lead">
+              This needs one more file. In Supabase, open SQL Editor and run{" "}
+              <code className="rounded bg-plate px-1.5 py-0.5 text-casing">14_expenses.sql</code> and then{" "}
+              <code className="rounded bg-plate px-1.5 py-0.5 text-casing">15_cash_book.sql</code>.
+            </p>
+          )}
+          <p className="mt-2 text-sm text-lead">Net profit is gross profit minus expenses (owner withdrawal excluded).</p>
+        </section>
+
         {/* Chart */}
-        <section className="card anim-rise p-5" style={{ "--i": 3 } as React.CSSProperties}>
+        <section className="card anim-rise p-5" style={{ "--i": 5 } as React.CSSProperties}>
           <h2 className="font-display text-2xl font-semibold">
             {period.singleDay ? "Sales, last 14 days" : chartBucket === "month" ? "Sales by month" : "Sales by day"}
           </h2>
@@ -141,7 +182,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </section>
 
         {/* Best sellers */}
-        <section className="card anim-rise p-5" style={{ "--i": 4 } as React.CSSProperties}>
+        <section className="card anim-rise p-5" style={{ "--i": 6 } as React.CSSProperties}>
           <h2 className="font-display text-2xl font-semibold">Best sellers</h2>
           {s.top_items.length === 0 ? (
             <p className="mt-2 text-lead">Items sold in this period will be ranked here.</p>
@@ -169,7 +210,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         </section>
 
         {/* Shop snapshot */}
-        <section className="card anim-rise p-5" style={{ "--i": 5 } as React.CSSProperties}>
+        <section className="card anim-rise p-5" style={{ "--i": 7 } as React.CSSProperties}>
           <h2 className="font-display text-2xl font-semibold">Shop right now</h2>
           <dl className="mt-2 divide-y divide-line/60">
             <Row label="Stock value (at cost)" value={formatRs(stockCost)} />
@@ -180,6 +221,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
               tone={owedTotal > 0 ? "text-terminal-deep" : undefined}
             />
             <Row label="Items running low" value={String(lowCount)} tone={lowCount > 0 ? "text-terminal-deep" : "text-cell-deep"} />
+            {finance && (
+              <Row
+                label={`We owe suppliers (${finance.we_owe_count} ${finance.we_owe_count === 1 ? "supplier" : "suppliers"})`}
+                value={formatRs(finance.we_owe_total)}
+                tone={finance.we_owe_total > 0 ? "text-terminal-deep" : undefined}
+              />
+            )}
           </dl>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link href="/sales?filter=due" className="btn btn-quiet btn-sm">
@@ -188,6 +236,11 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             <Link href="/inventory?filter=low" className="btn btn-quiet btn-sm">
               See low stock
             </Link>
+            {finance && finance.we_owe_total > 0 && (
+              <Link href="/suppliers" className="btn btn-quiet btn-sm">
+                See suppliers
+              </Link>
+            )}
           </div>
         </section>
       </div>
