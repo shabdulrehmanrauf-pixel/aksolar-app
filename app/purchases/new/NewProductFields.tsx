@@ -51,6 +51,7 @@ export default function NewProductFields({
 }) {
   const [form, setForm] = useState<NewPurchaseItemDraft>(empty());
   const [errors, setErrors] = useState<Errors>({});
+  const [otherType, setOtherType] = useState(false);
   const typeOptions = typeOptionsFor(form.category);
 
   const set = <K extends keyof NewPurchaseItemDraft>(key: K, value: NewPurchaseItemDraft[K]) => {
@@ -60,7 +61,19 @@ export default function NewProductFields({
 
   function changeCategory(category: Category) {
     setForm((prev) => ({ ...empty(), category, brand: prev.brand, model: prev.model }));
+    setOtherType(false);
     setErrors({});
+  }
+
+  const OTHER_TYPE = "__other__";
+  function changeType(value: string) {
+    if (value === OTHER_TYPE) {
+      setOtherType(true);
+      set("type", "");
+    } else {
+      setOtherType(false);
+      set("type", value);
+    }
   }
 
   function submit(e: React.FormEvent) {
@@ -168,12 +181,27 @@ export default function NewProductFields({
                 <label htmlFor="np-type2" className="mb-1.5 block text-sm font-medium">
                   {form.category === "panel" ? "Panel type" : "Kind of accessory"}
                 </label>
-                <input id="np-type2" list="np-type-options" value={form.type} onChange={(e) => set("type", e.target.value)} className="input" />
-                <datalist id="np-type-options">
+                <select id="np-type2" value={otherType ? OTHER_TYPE : form.type} onChange={(e) => changeType(e.target.value)} className="input">
+                  <option value="">Choose a type</option>
                   {typeOptions.map((t) => (
-                    <option key={t} value={t} />
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
                   ))}
-                </datalist>
+                  <option value={OTHER_TYPE}>Other (type your own)</option>
+                </select>
+                {otherType && (
+                  <input
+                    id="np-type2-other"
+                    type="text"
+                    autoFocus
+                    autoComplete="off"
+                    value={form.type}
+                    onChange={(e) => set("type", e.target.value)}
+                    placeholder="Type it in"
+                    className="input mt-2"
+                  />
+                )}
               </div>
               {form.category === "panel" && (
                 <div>
