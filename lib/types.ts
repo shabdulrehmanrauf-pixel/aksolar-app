@@ -206,6 +206,48 @@ export type LedgerRow = {
   running_balance: number;
 };
 
+/* ---------- Expenses (Phase F3) ---------- */
+/* Expenses share their payment-method list with supplier payments (decision D2) -- see
+ * SupplierPaymentMethod above and SUPPLIER_PAYMENT_METHODS in lib/purchases.ts, reused as-is. */
+
+export type ExpenseStatus = "Valid" | "Cancelled";
+
+/** One row of `expense_categories` (decision D11's seeded list). `excluded_from_profit` is true only
+ * for "Owner withdrawal" -- it counts in the cash book but not in Net profit, once F4 builds those. */
+export type ExpenseCategory = {
+  id: string;
+  name: string;
+  sort_order: number;
+  excluded_from_profit: boolean;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type Expense = {
+  id: string;
+  expense_number: string;       // EX-000001
+  category_id: string;
+  amount: number;
+  expense_date: string;         // YYYY-MM-DD
+  method: SupplierPaymentMethod;
+  paid_to: string | null;
+  reference: string | null;
+  cheque_number: string | null;
+  cheque_date: string | null;
+  bank_name: string | null;
+  note: string | null;
+  status: ExpenseStatus;
+  cancel_reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** One row of the `expense_details` view: an expense with its category's name and profit flag joined in. */
+export type ExpenseDetails = Expense & {
+  category_name: string;
+  excluded_from_profit: boolean;
+};
+
 export type StockMovementReason = "opening" | "purchase" | "purchase_cancel" | "adjustment" | "sale";
 
 /** A row in `stock_movements` (decision D6): the audit trail behind every quantity change. */
