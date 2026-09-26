@@ -108,6 +108,9 @@ export default function SalesClient({
   const includeOthers = filter === "all";
   const router = useRouter();
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  // Ids currently playing the "just deleted" fade -- still rendered (greyed out and
+  // unclickable) for DELETE_FADE_MS, then handed off to deletedIds so they vanish for good.
+  const [fadingIds, setFadingIds] = useState<string[]>([]);
   const [target, setTarget] = useState<LocalInvoice | null>(null);
   const [restock, setRestock] = useState(true);
   const [delBusy, setDelBusy] = useState(false);
@@ -145,6 +148,24 @@ export default function SalesClient({
     return () => clearTimeout(t);
   }, [toast]);
 
+  // How long a deleted row sits there greyed-out before it actually disappears.
+  const DELETE_FADE_MS = 650;
+
+  // Marks a row as "deleted" right away (it turns grey and stops responding to clicks),
+  // then -- once the fade has had time to play -- runs `cleanup` (the actual offline-cache
+  // removal) and drops the id into deletedIds so the row is gone from the list for good.
+  function fadeOutThenRemove(id: string, cleanup: () => Promise<void> | void) {
+    setFadingIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
+    window.setTimeout(() => {
+      Promise.resolve(cleanup())
+        .catch(() => {})
+        .finally(() => {
+          setDeletedIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
+          setFadingIds((ids) => ids.filter((x) => x !== id));
+        });
+    }, DELETE_FADE_MS);
+  }
+
   function askDelete(inv: LocalInvoice) {
     setRestock(true);
     setDelError(null);
@@ -160,9 +181,9 @@ export default function SalesClient({
     // there's nothing to tell Supabase, so discarding it is a purely local
     // action: drop the cached rows and cancel whatever is still queued for it.
     if (target.pending) {
+      const id = target.id;
       try {
-        await offlineDb.invoices.delete(target.id);
-        const items = await offlineDb.invoice_items.where("invoice_id").equals(target.id).toArray();
+        const items = await offlineDb.invoice_items.where("invoice_id").equals(id).toArray();
         await offlineDb.invoice_items.bulkDelete(items.map((i) => i.id));
         const queued = await offlineDb.pending_sync.toArray();
         const toDrop = queued.filter((a) => a.group_id === target.local_id).map((a) => a.id!);
@@ -176,6 +197,8 @@ export default function SalesClient({
         setToast("Draft bill discarded.");
         setTarget(null);
         setDelBusy(false);
+        // Leave the row itself in offlineDb until the fade plays, so it greys out first.
+        fadeOutThenRemove(id, () => offlineDb.invoices.delete(id));
       } catch {
         setDelError("Could not discard this draft. Please try again.");
         setDelBusy(false);
@@ -194,6 +217,21 @@ export default function SalesClient({
       const supabase = await getBrowserClient();
       const { error: dbError } = await supabase.rpc("delete_invoice", { p_invoice_id: target.id, p_restock: restock });
       if (dbError) {
+        // A stale offline copy can bring an already-deleted bill back into the list
+        // (e.g. a page reload served from the offline cache). Clicking delete on it then
+        // gets rejected because it's genuinely gone server-side already. Rather than
+        // scaring the user with an error for a bill that's gone either way, treat this
+        // as success: fade the row out and clean up the local copy so it stops coming back.
+        const alreadyGone = /could not be found/i.test(dbError.message);
+        if (alreadyGone) {
+          const id = target.id;
+          setToast(`${target.invoice_number} was already deleted.`);
+          setTarget(null);
+          setDelBusy(false);
+          fadeOutThenRemove(id, () => offlineDb.invoices.delete(id));
+          router.refresh();
+          return;
+        }
         setDelError(
           dbError.code === "42883" || dbError.code === "PGRST202"
             ? "The delete setup is missing. Run 06_delete_invoice.sql in Supabase, then try again."
@@ -202,11 +240,13 @@ export default function SalesClient({
         setDelBusy(false);
         return;
       }
-      await offlineDb.invoices.delete(target.id); // keep the offline cache from bringing it back
-      setDeletedIds((ids) => [...ids, target.id]);
+      const id = target.id;
       setToast(`${target.invoice_number} deleted.`);
       setTarget(null);
       setDelBusy(false);
+      // Keep the row in offlineDb until the fade plays, so it visibly greys out first
+      // instead of just vanishing from the list.
+      fadeOutThenRemove(id, () => offlineDb.invoices.delete(id));
       router.refresh();
     } catch {
       setDelError("The connection dropped. Refresh this page to see if the bill was deleted before you try again.");
@@ -348,47 +388,65 @@ export default function SalesClient({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line/60">
-                    {shown.map((inv) => (
-                      <tr key={inv.id} className="transition-colors hover:bg-plate/50">
-                        <td className="px-5 py-3.5">
-                          {inv.pending ? (
-                            <span className="inline-flex items-center gap-1.5 font-semibold text-lead">
-                              Pending sync
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                            </span>
-                          ) : (
-                            <Link href={`/sales/${inv.id}`} className="font-semibold text-focus hover:underline">
-                              {inv.invoice_number}
-                            </Link>
-                          )}
-                        </td>
-                        <td className="px-3 py-3.5 text-lead">Invoice</td>
-                        <td className="px-3 py-3.5 tabular-nums text-lead">{formatDay(inv.invoice_date)}</td>
-                        <td className="max-w-[16rem] truncate px-3 py-3.5 font-medium">{inv.buyer_name}</td>
-                        <td className="px-3 py-3.5 text-right font-semibold tabular-nums">{formatRs(inv.total_value)}</td>
-                        <td
-                          className={`px-3 py-3.5 text-right tabular-nums ${
-                            inv.status !== "Cancelled" && inv.due_total > 0 ? "font-semibold text-terminal-deep" : "text-lead"
+                    {shown.map((inv) => {
+                      const fading = fadingIds.includes(inv.id);
+                      return (
+                        <tr
+                          key={inv.id}
+                          aria-hidden={fading || undefined}
+                          className={`transition-all duration-500 ease-out ${
+                            fading ? "pointer-events-none grayscale opacity-35" : "hover:bg-plate/50"
                           }`}
                         >
-                          {inv.status !== "Cancelled" && inv.due_total > 0 ? formatRs(inv.due_total) : "-"}
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <PayBadge status={inv.payment_status} bill={inv.status} />
-                        </td>
-                        <td className="px-3 py-3.5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => askDelete(inv)}
-                            aria-label={inv.pending ? `Discard draft bill for ${inv.buyer_name}` : `Delete bill ${inv.invoice_number}`}
-                            title={inv.pending ? "Discard draft" : "Delete bill"}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-lead hover:bg-terminal/10 hover:text-terminal-deep"
+                          <td className="px-5 py-3.5">
+                            {inv.pending ? (
+                              <span className="inline-flex items-center gap-1.5 font-semibold text-lead">
+                                Pending sync
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                              </span>
+                            ) : fading ? (
+                              <span className="font-semibold text-lead line-through">{inv.invoice_number}</span>
+                            ) : (
+                              <Link href={`/sales/${inv.id}`} className="font-semibold text-focus hover:underline">
+                                {inv.invoice_number}
+                              </Link>
+                            )}
+                          </td>
+                          <td className="px-3 py-3.5 text-lead">Invoice</td>
+                          <td className="px-3 py-3.5 tabular-nums text-lead">{formatDay(inv.invoice_date)}</td>
+                          <td className="max-w-[16rem] truncate px-3 py-3.5 font-medium">{inv.buyer_name}</td>
+                          <td className="px-3 py-3.5 text-right font-semibold tabular-nums">{formatRs(inv.total_value)}</td>
+                          <td
+                            className={`px-3 py-3.5 text-right tabular-nums ${
+                              inv.status !== "Cancelled" && inv.due_total > 0 ? "font-semibold text-terminal-deep" : "text-lead"
+                            }`}
                           >
-                            <Icon name="trash" className="h-5 w-5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                            {inv.status !== "Cancelled" && inv.due_total > 0 ? formatRs(inv.due_total) : "-"}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            {fading ? (
+                              <span className="inline-flex rounded-full bg-plate px-2.5 py-1 text-xs font-semibold text-lead">
+                                Deleted
+                              </span>
+                            ) : (
+                              <PayBadge status={inv.payment_status} bill={inv.status} />
+                            )}
+                          </td>
+                          <td className="px-3 py-3.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => askDelete(inv)}
+                              disabled={fading}
+                              aria-label={inv.pending ? `Discard draft bill for ${inv.buyer_name}` : `Delete bill ${inv.invoice_number}`}
+                              title={inv.pending ? "Discard draft" : "Delete bill"}
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-lead hover:bg-terminal/10 hover:text-terminal-deep disabled:cursor-default"
+                            >
+                              <Icon name="trash" className="h-5 w-5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {otherRows.map((row) => (
                       <tr key={`${row.kind}-${row.id}`} className="transition-colors hover:bg-plate/50">
                         <td className="px-5 py-3.5">
@@ -426,11 +484,12 @@ export default function SalesClient({
               {/* Phone cards */}
               <ul className="mt-4 space-y-2.5 md:hidden">
                 {shown.map((inv) => {
+                  const fading = fadingIds.includes(inv.id);
                   const body = (
                     <>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
-                          <span className="truncate font-semibold">{inv.buyer_name}</span>
+                          <span className={`truncate font-semibold ${fading ? "line-through" : ""}`}>{inv.buyer_name}</span>
                         </span>
                         <span className="mt-0.5 block text-sm text-lead">
                           {inv.pending ? (
@@ -444,7 +503,13 @@ export default function SalesClient({
                           )}
                         </span>
                         <span className="mt-1.5 block">
-                          <PayBadge status={inv.payment_status} bill={inv.status} />
+                          {fading ? (
+                            <span className="inline-flex rounded-full bg-plate px-2.5 py-1 text-xs font-semibold text-lead">
+                              Deleted
+                            </span>
+                          ) : (
+                            <PayBadge status={inv.payment_status} bill={inv.status} />
+                          )}
                         </span>
                       </span>
                       <span className="text-right">
@@ -461,7 +526,13 @@ export default function SalesClient({
                     </>
                   );
                   return (
-                    <li key={inv.id} className="flex items-stretch gap-2">
+                    <li
+                      key={inv.id}
+                      aria-hidden={fading || undefined}
+                      className={`flex items-stretch gap-2 transition-all duration-500 ease-out ${
+                        fading ? "pointer-events-none grayscale opacity-35" : ""
+                      }`}
+                    >
                       {inv.pending ? (
                         <div className="card flex min-w-0 flex-1 items-center gap-3 p-4 opacity-80">{body}</div>
                       ) : (
@@ -472,8 +543,9 @@ export default function SalesClient({
                       <button
                         type="button"
                         onClick={() => askDelete(inv)}
+                        disabled={fading}
                         aria-label={inv.pending ? `Discard draft bill for ${inv.buyer_name}` : `Delete bill ${inv.invoice_number}`}
-                        className="card inline-flex w-12 shrink-0 items-center justify-center text-lead hover:bg-terminal/10 hover:text-terminal-deep"
+                        className="card inline-flex w-12 shrink-0 items-center justify-center text-lead hover:bg-terminal/10 hover:text-terminal-deep disabled:cursor-default"
                       >
                         <Icon name="trash" className="h-5 w-5" />
                       </button>
