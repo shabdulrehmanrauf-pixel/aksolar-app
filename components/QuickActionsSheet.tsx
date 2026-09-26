@@ -12,14 +12,14 @@ type Action = {
   tone: string;
   /** Set once its screen exists. Buttons without one are shown, greyed out, so the full set of
    * buttons decision D7 asked for ("I need buttons") is visible now, with the rest arriving in
-   * F2 (Payments) and F3 (Expenses) instead of being hidden and forgotten. */
+   * F3 (Expenses) instead of being hidden and forgotten. Make payment unlocked in F2. */
   soon?: boolean;
 };
 
 const ACTIONS: Action[] = [
   { href: "/sales/new", label: "New bill", hint: "Sell to a customer", icon: "receipt", tone: "bg-sun/25 text-amber-800" },
   { href: "/purchases/new", label: "Receive stock", hint: "Buy from a supplier", icon: "truck", tone: "bg-focus/10 text-focus" },
-  { href: "/payments", label: "Make payment", hint: "Coming soon", icon: "banknote", tone: "bg-cell/10 text-cell", soon: true },
+  { href: "/payments/new", label: "Make payment", hint: "Pay a supplier", icon: "banknote", tone: "bg-cell/10 text-cell" },
   { href: "/expenses", label: "Add expense", hint: "Coming soon", icon: "minus", tone: "bg-terminal/10 text-terminal-deep", soon: true },
   { href: "/customers?add=1", label: "Add customer", hint: "Save a new customer", icon: "userplus", tone: "bg-focus/10 text-focus" },
 ];
