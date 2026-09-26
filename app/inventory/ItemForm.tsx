@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import Icon from "@/components/Icons";
 import Sheet from "@/components/Sheet";
 import { focusFirstError } from "@/lib/formFocus";
 import { offlineSave } from "@/lib/offline/dataLayer";
-import type { Category, InventoryItem } from "@/lib/types";
+import { getBrowserClient } from "@/lib/supabase/lazy";
+import { formatDay } from "@/lib/invoices";
+import type { Category, InventoryItem, StockMovement } from "@/lib/types";
 import {
   ACCESSORY_TYPES,
   BATTERY_TYPES,
@@ -113,6 +116,80 @@ function TextField({
         </p>
       ) : null}
     </div>
+  );
+}
+
+const REASON_LABEL: Record<StockMovement["reason"], string> = {
+  opening: "Opening stock",
+  purchase: "Purchase received",
+  purchase_cancel: "Purchase cancelled",
+  adjustment: "Adjustment",
+  sale: "Sold",
+};
+
+/** Recent quantity changes for this item, from `stock_movements` (decision D6). Loaded lazily,
+ * only once the section is opened, since most edits never need it. */
+function StockHistory({ itemId }: { itemId: string }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [rows, setRows] = useState<StockMovement[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    if (!open || rows !== null || loading) return;
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const supabase = await getBrowserClient();
+        const { data, error } = await supabase
+          .from("stock_movements")
+          .select("*")
+          .eq("inventory_id", itemId)
+          .order("created_at", { ascending: false })
+          .limit(30);
+        if (cancelled) return;
+        if (error) setLoadError(true);
+        else setRows((data ?? []) as StockMovement[]);
+      } catch {
+        if (!cancelled) setLoadError(true);
+      }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, rows, loading, itemId]);
+
+  return (
+    <details className="rounded-2xl bg-plate/60 p-3.5" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="cursor-pointer text-sm font-semibold text-lead">Stock history</summary>
+      <div className="mt-3">
+        {loading && <p className="text-sm text-lead">Loading</p>}
+        {loadError && (
+          <p className="text-sm text-lead">
+            Could not be loaded. Run <code className="rounded bg-white px-1 py-0.5">12_suppliers_purchases.sql</code> in Supabase if you haven't yet.
+          </p>
+        )}
+        {rows && rows.length === 0 && <p className="text-sm text-lead">No stock movements recorded yet.</p>}
+        {rows && rows.length > 0 && (
+          <ul className="space-y-1.5">
+            {rows.map((m) => (
+              <li key={m.id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-lead">
+                  {formatDay(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi" }).format(new Date(m.created_at)))} ·{" "}
+                  {REASON_LABEL[m.reason]}
+                </span>
+                <span className={`font-semibold tabular-nums ${m.change >= 0 ? "text-cell-deep" : "text-terminal-deep"}`}>
+                  {m.change >= 0 ? "+" : ""}
+                  {m.change}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -371,7 +448,14 @@ export default function ItemForm({
                 hint="Item shows as low at or below this number."
               />
             </div>
+            {item && (
+              <Link href={`/purchases/new?item=${item.id}`} className="inline-flex items-center gap-1.5 text-sm font-semibold text-focus hover:underline">
+                <Icon name="truck" className="h-4 w-4" /> Restock this item (new purchase bill)
+              </Link>
+            )}
           </fieldset>
+
+          {item && <StockHistory itemId={item.id} />}
 
           <details className="rounded-xl border border-line">
             <summary className="cursor-pointer px-4 py-3 font-display text-xl font-semibold">

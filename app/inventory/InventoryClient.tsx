@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Icon from "@/components/Icons";
@@ -219,9 +220,14 @@ export default function InventoryClient({
             : `${items.length} ${items.length === 1 ? "item" : "items"}, ${totalUnits} units in stock.`
         }
         action={
-          <button type="button" onClick={openAdd} className="btn btn-primary">
-            <Icon name="plus" className="h-5 w-5" /> Add item
-          </button>
+          <div className="flex gap-2.5">
+            <Link href="/purchases/new" className="btn btn-quiet">
+              <Icon name="truck" className="h-5 w-5" /> Receive stock
+            </Link>
+            <button type="button" onClick={openAdd} className="btn btn-primary">
+              <Icon name="plus" className="h-5 w-5" /> Add item
+            </button>
+          </div>
         }
       />
 
@@ -382,6 +388,14 @@ export default function InventoryClient({
                       </td>
                       <td className="px-4 py-3.5">
                         <div className="flex justify-end gap-1.5">
+                          <Link
+                            href={`/purchases/new?item=${item.id}`}
+                            aria-label={`Restock ${item.brand} ${item.model}`}
+                            title="Restock"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-white text-casing transition-colors hover:bg-plate"
+                          >
+                            <Icon name="truck" className="h-[18px] w-[18px]" />
+                          </Link>
                           <button
                             type="button"
                             onClick={() => openEdit(item)}
@@ -433,6 +447,9 @@ export default function InventoryClient({
                       <span className="text-lead">cost {formatRs(item.cost_price)}</span>
                     </div>
                     <div className="flex gap-2">
+                      <Link href={`/purchases/new?item=${item.id}`} aria-label={`Restock ${item.brand} ${item.model}`} className="btn btn-quiet btn-sm">
+                        <Icon name="truck" className="h-4 w-4" /> Restock
+                      </Link>
                       <button
                         type="button"
                         onClick={() => openEdit(item)}
