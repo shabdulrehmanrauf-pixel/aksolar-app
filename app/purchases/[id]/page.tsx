@@ -1,31 +1,14 @@
 import type { Metadata } from "next";
-import { createClient } from "@/lib/supabase/server";
-import type { InventoryItem, SupplierBalance } from "@/lib/types";
-import NewPurchase, { type PurchaseStockItem } from "./NewPurchase";
+import { notFound } from "next/navigation";
+import { loadPurchaseDocument } from "@/lib/purchaseDoc";
+import PurchaseDetail from "./PurchaseDetail";
 
-export const metadata: Metadata = { title: "Receive stock" };
+export const metadata: Metadata = { title: "Purchase bill" };
 
-const STOCK_COLUMNS =
-  "id,category,brand,model,type,voltage,plates,ah_rating,wattage,cost_price,quantity";
+export default async function PurchasePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const doc = await loadPurchaseDocument(id);
+  if (!doc) notFound();
 
-export default async function NewPurchasePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ supplier?: string; item?: string }>;
-}) {
-  const { supplier, item } = await searchParams;
-  const supabase = await createClient();
-  const [stock, suppliers] = await Promise.all([
-    supabase.from("inventory").select(STOCK_COLUMNS).order("brand"),
-    supabase.from("supplier_balances").select("*").eq("is_active", true).order("name"),
-  ]);
-
-  return (
-    <NewPurchase
-      stock={(stock.data ?? []) as PurchaseStockItem[]}
-      suppliers={(suppliers.data ?? []) as SupplierBalance[]}
-      initialSupplierId={supplier ?? null}
-      initialItemId={item ?? null}
-    />
-  );
+  return <PurchaseDetail {...doc} />;
 }
