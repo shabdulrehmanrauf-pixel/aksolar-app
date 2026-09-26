@@ -10,9 +10,9 @@ type Action = {
   hint: string;
   icon: IconName;
   tone: string;
-  /** Set once its screen exists. Buttons without one are shown, greyed out, so the full set of
-   * buttons decision D7 asked for ("I need buttons") is visible now, with the rest arriving in
-   * F3 (Expenses) instead of being hidden and forgotten. Make payment unlocked in F2. */
+  /** Set for a button whose screen doesn't exist yet, shown greyed out so the full set of buttons
+   * decision D7 asked for ("I need buttons") is visible now, with the rest arriving as each phase
+   * lands instead of being hidden and forgotten. Make payment unlocked in F2, Add expense in F3. */
   soon?: boolean;
 };
 
@@ -20,7 +20,7 @@ const ACTIONS: Action[] = [
   { href: "/sales/new", label: "New bill", hint: "Sell to a customer", icon: "receipt", tone: "bg-sun/25 text-amber-800" },
   { href: "/purchases/new", label: "Receive stock", hint: "Buy from a supplier", icon: "truck", tone: "bg-focus/10 text-focus" },
   { href: "/payments/new", label: "Make payment", hint: "Pay a supplier", icon: "banknote", tone: "bg-cell/10 text-cell" },
-  { href: "/expenses", label: "Add expense", hint: "Coming soon", icon: "minus", tone: "bg-terminal/10 text-terminal-deep", soon: true },
+  { href: "/expenses?add=1", label: "Add expense", hint: "Log rent, salaries, fuel, etc.", icon: "minus", tone: "bg-terminal/10 text-terminal-deep" },
   { href: "/customers?add=1", label: "Add customer", hint: "Save a new customer", icon: "userplus", tone: "bg-focus/10 text-focus" },
 ];
 
