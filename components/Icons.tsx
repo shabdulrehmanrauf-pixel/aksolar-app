@@ -171,6 +171,21 @@ const ICONS = {
       <path d="M20 17H7M11 21l-4-4 4-4" />
     </>
   ),
+  truck: (
+    <>
+      <path d="M2 7h11v10H2z" />
+      <path d="M13 10h4l4 3.5V17h-8z" />
+      <circle cx="7" cy="18.5" r="1.8" />
+      <circle cx="17" cy="18.5" r="1.8" />
+    </>
+  ),
+  cart: (
+    <>
+      <path d="M3 4h2l2.4 12.2a2 2 0 0 0 2 1.6h7.4a2 2 0 0 0 2-1.6L21 8H6" />
+      <circle cx="9.5" cy="20.5" r="1.4" fill="currentColor" />
+      <circle cx="17" cy="20.5" r="1.4" fill="currentColor" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof ICONS;
