@@ -665,51 +665,52 @@ export default function NewBill({
                       autoComplete="off"
                     />
 
+                    <div className="mt-3">
+                      <label htmlFor="walkin-phone" className="mb-1 block text-sm font-medium text-lead">
+                        Phone (optional)
+                      </label>
+                      <input
+                        id="walkin-phone"
+                        type="tel"
+                        inputMode="tel"
+                        value={walkinPhone}
+                        onChange={(e) => {
+                          setWalkinPhone(e.target.value);
+                          setError(null);
+                        }}
+                        placeholder="0300 1234567"
+                        className="input"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="mt-3">
+                      <label htmlFor="walkin-address" className="mb-1 block text-sm font-medium text-lead">
+                        Address (optional)
+                      </label>
+                      <textarea
+                        id="walkin-address"
+                        rows={2}
+                        value={walkinAddress}
+                        onChange={(e) => setWalkinAddress(e.target.value)}
+                        placeholder="Shop or house number, area, city"
+                        className="input resize-none"
+                        autoComplete="off"
+                      />
+                    </div>
+
                     {!walkinDetailsOpen ? (
                       <button
                         type="button"
                         className="btn btn-quiet btn-sm mt-2.5"
                         onClick={() => setWalkinDetailsOpen(true)}
                       >
-                        <Icon name="userplus" className="h-4 w-4" /> Add phone, address or CNIC/NTN
+                        <Icon name="userplus" className="h-4 w-4" /> Add CNIC/NTN
                       </button>
                     ) : (
                       <div className="mt-3 space-y-3 rounded-xl border border-line p-3.5">
                         <p className="text-xs text-lead">
-                          These go straight on this bill. They are not saved as a customer record.
+                          This goes straight on this bill. It is not saved as a customer record.
                         </p>
-                        <div>
-                          <label htmlFor="walkin-phone" className="mb-1 block text-sm font-medium text-lead">
-                            Phone (optional)
-                          </label>
-                          <input
-                            id="walkin-phone"
-                            type="tel"
-                            inputMode="tel"
-                            value={walkinPhone}
-                            onChange={(e) => {
-                              setWalkinPhone(e.target.value);
-                              setError(null);
-                            }}
-                            placeholder="0300 1234567"
-                            className="input"
-                            autoComplete="off"
-                          />
-                        </div>
-                        <div>
-                          <label htmlFor="walkin-address" className="mb-1 block text-sm font-medium text-lead">
-                            Address (optional)
-                          </label>
-                          <textarea
-                            id="walkin-address"
-                            rows={2}
-                            value={walkinAddress}
-                            onChange={(e) => setWalkinAddress(e.target.value)}
-                            placeholder="Shop or house number, area, city"
-                            className="input resize-none"
-                            autoComplete="off"
-                          />
-                        </div>
                         <div role="radiogroup" aria-label="Registration type" className="grid grid-cols-2 gap-2 rounded-2xl bg-plate p-1.5">
                           {REGISTRATION_TYPES.map((r) => {
                             const on = walkinRegType === r.value;
@@ -755,13 +756,11 @@ export default function NewBill({
                           className="btn btn-quiet btn-sm"
                           onClick={() => {
                             setWalkinDetailsOpen(false);
-                            setWalkinPhone("");
-                            setWalkinAddress("");
                             setWalkinRegType("Unregistered");
                             setWalkinCnic("");
                           }}
                         >
-                          Remove these details
+                          Remove CNIC/NTN
                         </button>
                       </div>
                     )}
