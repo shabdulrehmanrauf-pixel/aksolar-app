@@ -191,7 +191,14 @@ export default function PurchaseDetail({ purchase: p, items, payments, supplier 
           </section>
 
           <section className="card anim-rise p-5" style={{ "--i": 3 } as React.CSSProperties}>
-            <h2 className="font-display text-2xl font-semibold">Payments</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-display text-2xl font-semibold">Payments</h2>
+              {p.status !== "Cancelled" && p.due_total > 0 && (
+                <Link href={`/payments/new?purchase=${p.id}`} className="btn btn-primary btn-sm">
+                  <Icon name="banknote" className="h-4 w-4" /> Record payment
+                </Link>
+              )}
+            </div>
             {payments.length === 0 ? (
               <p className="mt-2 text-lead">
                 Nothing paid yet. The full {formatRs(p.total_value)} is owed to {supplier.name}.
@@ -201,19 +208,21 @@ export default function PurchaseDetail({ purchase: p, items, payments, supplier 
                 {payments.map((pay) => (
                   <li key={pay.id} className="flex items-center justify-between gap-3 py-2.5">
                     <span>
-                      <span className="block font-semibold">{supplierMethodLabel(pay.method)}</span>
+                      <span className="block font-semibold">
+                        {supplierMethodLabel(pay.method)}
+                        {pay.status === "Cancelled" && <span className="ml-2 font-normal text-lead">Cancelled</span>}
+                      </span>
                       <span className="block text-sm text-lead">
                         {formatDay(pay.paid_at)}, {formatTime(pay.created_at)}
                       </span>
                     </span>
-                    <span className="font-semibold tabular-nums">{formatRs(pay.amount)}</span>
+                    <span className={`font-semibold tabular-nums ${pay.status === "Cancelled" ? "text-lead line-through" : ""}`}>
+                      {formatRs(pay.amount)}
+                    </span>
                   </li>
                 ))}
               </ul>
             )}
-            <p className="mt-3 text-sm text-lead">
-              Recording a payment later (not made when this bill was saved) is coming with Payments to suppliers.
-            </p>
           </section>
         </div>
       </div>
