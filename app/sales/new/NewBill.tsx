@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import Icon from "@/components/Icons";
@@ -932,119 +932,126 @@ export default function NewBill({
                 </p>
               </div>
             ) : (
-              <div className="mt-4">
-                <ul className="divide-y divide-line/60 rounded-xl border border-line">
-                  {computed.map((c) => (
-                    <li key={c.line.itemId} className="p-3 sm:p-4">
-                      <div className="flex items-start gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="break-words font-semibold leading-snug">
-                            {c.item.brand} {c.item.model}
-                          </p>
-                          <p className="text-sm text-lead">{specText(c.item)}</p>
-                          {newItemIds.has(c.line.itemId) && (
-                            <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-cell/10 px-2 py-0.5 text-xs font-semibold text-cell-deep">
-                              <Icon name="check" className="h-3 w-3" strokeWidth={2.4} /> New item, added to inventory
+              /* Laid out like the paper bill pad: Particulars / Qty / Rate / Amount columns, so it
+               * reads the same way staff already read a handwritten bill. Scrolls sideways on a
+               * narrow phone rather than squeezing the columns unreadably thin. */
+              <div className="mt-4 overflow-x-auto rounded-xl border border-line">
+                <table className="w-full min-w-[38rem] border-collapse text-[15px]">
+                  <thead>
+                    <tr className="bg-plate/70 text-left">
+                      <th className="border-b border-line px-3 py-2.5 font-display text-base font-semibold">Particulars</th>
+                      <th className="w-28 border-b border-line px-2 py-2.5 text-center font-display text-base font-semibold">Qty</th>
+                      <th className="w-28 border-b border-line px-2 py-2.5 text-right font-display text-base font-semibold">Rate</th>
+                      <th className="w-32 border-b border-line px-3 py-2.5 text-right font-display text-base font-semibold">Amount</th>
+                      <th className="w-10 border-b border-line" aria-hidden="true" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line/60">
+                    {computed.map((c) => (
+                      <Fragment key={c.line.itemId}>
+                        <tr className={c.overStock ? "bg-terminal/5" : undefined}>
+                          <td className="min-w-[11rem] px-3 py-2.5 align-top">
+                            <p className="break-words font-semibold leading-snug">
+                              {c.item.brand} {c.item.model}
                             </p>
-                          )}
-                          {c.overStock && (
-                            <p role="alert" className="mt-1 text-sm font-semibold text-terminal-deep">
-                              Only {c.item.quantity} in stock. Lower the quantity to save.
-                            </p>
-                          )}
-                          {!c.overStock && c.changed && (
-                            <p className="mt-1 text-sm text-amber-800">Price changed from {formatRs(c.item.sale_price)}</p>
-                          )}
-                          {c.belowCost && <p className="mt-0.5 text-sm font-semibold text-terminal-deep">Below cost price</p>}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeLine(c.line.itemId)}
-                          aria-label={`Remove ${c.item.brand} ${c.item.model}`}
-                          className="-mr-1 -mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lead hover:bg-terminal/10 hover:text-terminal"
-                        >
-                          <Icon name="trash" className="h-5 w-5" />
-                        </button>
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-2">
-                        <div>
-                          <span className="mb-1 block text-xs text-lead">Qty</span>
-                          <div className="flex items-center">
-                            <button
-                              type="button"
-                              onClick={() => stepQty(c.line, -1)}
-                              aria-label={`One less ${c.item.brand} ${c.item.model}`}
-                              className="inline-flex h-11 w-11 items-center justify-center rounded-l-xl border border-line bg-white hover:bg-plate"
-                            >
-                              <Icon name="minus" className="h-4 w-4" />
-                            </button>
-                            <input
-                              value={c.line.qty}
-                              onChange={(e) => setLine(c.line.itemId, { qty: e.target.value.replace(/\D/g, "") })}
-                              onFocus={(e) => e.target.select()}
-                              inputMode="numeric"
-                              aria-label={`Quantity of ${c.item.brand} ${c.item.model}`}
-                              aria-invalid={c.qty == null}
-                              className="input h-11 w-14 rounded-none border-x-0 px-1 text-center tabular-nums"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => stepQty(c.line, 1)}
-                              aria-label={`One more ${c.item.brand} ${c.item.model}`}
-                              className="inline-flex h-11 w-11 items-center justify-center rounded-r-xl border border-line bg-white hover:bg-plate"
-                            >
-                              <Icon name="plus" className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="w-32">
-                          <label className="mb-1 block text-xs text-lead" htmlFor={`rate-${c.line.itemId}`}>
-                            Rate (Rs)
-                          </label>
-                          <input
-                            id={`rate-${c.line.itemId}`}
-                            value={c.line.rate}
-                            onChange={(e) => setLine(c.line.itemId, { rate: e.target.value.replace(/[^\d.,]/g, "") })}
-                            onFocus={(e) => e.target.select()}
-                            inputMode="decimal"
-                            aria-invalid={c.rate == null}
-                            className="input h-11 tabular-nums"
-                          />
-                        </div>
-                        <div className="ml-auto text-right">
-                          <span className="mb-1 block text-xs text-lead">Amount</span>
-                          <span className="block font-display text-2xl font-semibold leading-[2.75rem] tabular-nums">{formatRs(c.amount)}</span>
-                        </div>
-                      </div>
-
-                      {c.item.category === "battery" && (
-                        <div className="mt-3">
-                          {!replacements[c.line.itemId] ? (
-                            <button
-                              type="button"
-                              className="btn btn-quiet btn-sm"
-                              onClick={() => addReplacement(c.line.itemId, c.item, c.line.qty)}
-                            >
-                              <Icon name="swap" className="h-4 w-4" /> Old battery taken in exchange
-                            </button>
-                          ) : (
-                            <div className="rounded-xl border border-line bg-plate/50 p-3">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-casing">
-                                  <Icon name="swap" className="h-4 w-4" /> Old battery taken in exchange
-                                </p>
+                            <p className="text-sm text-lead">{specText(c.item)}</p>
+                            {newItemIds.has(c.line.itemId) && (
+                              <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-cell/10 px-2 py-0.5 text-xs font-semibold text-cell-deep">
+                                <Icon name="check" className="h-3 w-3" strokeWidth={2.4} /> New item, added to inventory
+                              </p>
+                            )}
+                            {c.overStock && (
+                              <p role="alert" className="mt-1 text-sm font-semibold text-terminal-deep">
+                                Only {c.item.quantity} in stock. Lower the quantity to save.
+                              </p>
+                            )}
+                            {!c.overStock && c.changed && (
+                              <p className="mt-1 text-sm text-amber-800">Price changed from {formatRs(c.item.sale_price)}</p>
+                            )}
+                            {c.belowCost && <p className="mt-0.5 text-sm font-semibold text-terminal-deep">Below cost price</p>}
+                            {c.item.category === "battery" &&
+                              (!replacements[c.line.itemId] ? (
                                 <button
                                   type="button"
-                                  className="text-sm font-medium text-lead hover:text-terminal-deep"
-                                  onClick={() => removeReplacement(c.line.itemId)}
+                                  className="btn btn-quiet btn-sm mt-2"
+                                  onClick={() => addReplacement(c.line.itemId, c.item, c.line.qty)}
                                 >
-                                  Remove
+                                  <Icon name="swap" className="h-4 w-4" /> Old battery taken in exchange
                                 </button>
-                              </div>
-                              <p className="mt-1 text-xs text-lead">
-                                Goes to the scrap pile, not back into sellable stock.
-                              </p>
+                              ) : (
+                                <p className="mt-2 inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-casing">
+                                  <Icon name="swap" className="h-4 w-4" /> Old battery taken in exchange
+                                  <button
+                                    type="button"
+                                    className="font-medium text-lead hover:text-terminal-deep hover:underline"
+                                    onClick={() => removeReplacement(c.line.itemId)}
+                                  >
+                                    Remove
+                                  </button>
+                                </p>
+                              ))}
+                          </td>
+                          <td className="px-2 py-2.5 align-top">
+                            <div className="mx-auto flex w-fit items-center">
+                              <button
+                                type="button"
+                                onClick={() => stepQty(c.line, -1)}
+                                aria-label={`One less ${c.item.brand} ${c.item.model}`}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-l-lg border border-line bg-white hover:bg-plate"
+                              >
+                                <Icon name="minus" className="h-3.5 w-3.5" />
+                              </button>
+                              <input
+                                value={c.line.qty}
+                                onChange={(e) => setLine(c.line.itemId, { qty: e.target.value.replace(/\D/g, "") })}
+                                onFocus={(e) => e.target.select()}
+                                inputMode="numeric"
+                                aria-label={`Quantity of ${c.item.brand} ${c.item.model}`}
+                                aria-invalid={c.qty == null}
+                                className="input h-9 w-12 rounded-none border-x-0 px-1 text-center tabular-nums"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => stepQty(c.line, 1)}
+                                aria-label={`One more ${c.item.brand} ${c.item.model}`}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-r-lg border border-line bg-white hover:bg-plate"
+                              >
+                                <Icon name="plus" className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-2 py-2.5 align-top">
+                            <label className="sr-only" htmlFor={`rate-${c.line.itemId}`}>
+                              Rate for {c.item.brand} {c.item.model}
+                            </label>
+                            <input
+                              id={`rate-${c.line.itemId}`}
+                              value={c.line.rate}
+                              onChange={(e) => setLine(c.line.itemId, { rate: e.target.value.replace(/[^\d.,]/g, "") })}
+                              onFocus={(e) => e.target.select()}
+                              inputMode="decimal"
+                              aria-invalid={c.rate == null}
+                              className="input h-9 w-full text-right tabular-nums"
+                            />
+                          </td>
+                          <td className="px-3 py-2.5 text-right align-top font-display text-lg font-semibold tabular-nums">
+                            {formatRs(c.amount)}
+                          </td>
+                          <td className="px-1 py-2.5 align-top">
+                            <button
+                              type="button"
+                              onClick={() => removeLine(c.line.itemId)}
+                              aria-label={`Remove ${c.item.brand} ${c.item.model}`}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-lead hover:bg-terminal/10 hover:text-terminal"
+                            >
+                              <Icon name="trash" className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                        {c.item.category === "battery" && replacements[c.line.itemId] && (
+                          <tr>
+                            <td colSpan={5} className="bg-plate/50 px-3 py-3">
+                              <p className="text-xs text-lead">Goes to the scrap pile, not back into sellable stock.</p>
                               <div className="mt-2.5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                                 <div className="col-span-1">
                                   <label htmlFor={`rep-brand-${c.line.itemId}`} className="mb-1 block text-xs text-lead">
@@ -1142,13 +1149,13 @@ export default function NewBill({
                                   className="input h-10"
                                 />
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
                 <datalist id="rep-battery-types">
                   {BATTERY_TYPES.map((t) => (
                     <option key={t} value={t} />
