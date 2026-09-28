@@ -7,6 +7,9 @@ import Sheet from "@/components/Sheet";
 import { focusFirstError } from "@/lib/formFocus";
 import { offlineSave } from "@/lib/offline/dataLayer";
 import { getBrowserClient } from "@/lib/supabase/lazy";
+import FbrPicker from "@/components/FbrPicker";
+import { FALLBACK_RATES, FALLBACK_SALE_TYPES } from "@/lib/fbr";
+import { useFbrRef, useFbrSettings } from "@/lib/fbrRef";
 import { formatDay } from "@/lib/invoices";
 import type { Category, InventoryItem, StockMovement } from "@/lib/types";
 import {
@@ -42,6 +45,12 @@ function initialState(item: InventoryItem | null): FormState {
       reorder_level: "2",
       hs_code: "",
       uom: DEFAULT_UOM,
+      is_taxable: true,
+      sale_type: "Goods at standard rate (default)",
+      fbr_rate_desc: "",
+      retail_price: "",
+      sro_schedule_no: "",
+      sro_item_serial_no: "",
     };
   }
   return {
@@ -60,6 +69,12 @@ function initialState(item: InventoryItem | null): FormState {
     reorder_level: str(item.reorder_level),
     hs_code: item.hs_code ?? "",
     uom: item.uom,
+    is_taxable: item.is_taxable !== false,
+    sale_type: item.sale_type ?? "Goods at standard rate (default)",
+    fbr_rate_desc: item.fbr_rate_desc ?? "",
+    retail_price: str(item.retail_price),
+    sro_schedule_no: item.sro_schedule_no ?? "",
+    sro_item_serial_no: item.sro_item_serial_no ?? "",
   };
 }
 
@@ -214,6 +229,24 @@ export default function ItemForm({
     return initial.type !== "" && !options.includes(initial.type);
   });
 
+  const fbrSettings = useFbrSettings();
+  const hsRows = useFbrRef("hs_code");
+  const uomRows = useFbrRef("uom");
+  const saleTypeRows = useFbrRef("sale_type");
+  const rateRows = useFbrRef("rate");
+  const hsUomRows = useFbrRef("hs_uom");
+  const saleTypes = saleTypeRows.length > 0 ? saleTypeRows.map((r) => r.label ?? r.code) : FALLBACK_SALE_TYPES;
+  const rates = rateRows.length > 0 ? rateRows.map((r) => r.label ?? r.code) : FALLBACK_RATES;
+  // If FBR told us which units this HS code allows, only those are offered (FBR error 0099).
+  const allowedUoms = (() => {
+    const row = hsUomRows.find((r) => r.code === form.hs_code.trim());
+    const list = (row?.payload as { uoms?: unknown } | null | undefined)?.uoms;
+    return Array.isArray(list) && list.length > 0 ? new Set(list.map(String)) : null;
+  })();
+  const uomChoices = allowedUoms ? uomRows.filter((r) => allowedUoms.has(r.label ?? r.code)) : uomRows;
+  const isThird = /^3rd schedule/i.test(form.sale_type ?? "");
+  const needsSroFields = /reduced|^exempt/i.test(form.sale_type ?? "");
+
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -236,7 +269,18 @@ export default function ItemForm({
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const found = validate(form);
+    const found = validate(form, { fbrOn: fbrSettings.enabled });
+    // Once the FBR lists are loaded, only values from those lists are accepted.
+    const hs = form.hs_code.trim();
+    if (hs && hsRows.length > 0 && !hsRows.some((r) => r.code === hs)) {
+      found.hs_code = "This HS code is not in the FBR list. Pick one from the suggestions.";
+    }
+    const uomText = form.uom.trim();
+    if (uomText && uomRows.length > 0 && !uomRows.some((r) => (r.label ?? r.code) === uomText)) {
+      found.uom = "This unit is not in the FBR list. Pick one from the suggestions.";
+    } else if (uomText && allowedUoms && !allowedUoms.has(uomText)) {
+      found.uom = "FBR does not allow this unit for this HS code (error 0099).";
+    }
     setErrors(found);
     if (Object.keys(found).length > 0) {
       setSaveError("Some fields need attention. They are marked in red.");
@@ -500,34 +544,126 @@ export default function ItemForm({
 
           {item && <StockHistory itemId={item.id} />}
 
-          <details className="rounded-xl border border-line">
+          <details
+            className="rounded-xl border border-line"
+            open={fbrSettings.enabled || errors.hs_code || errors.uom || errors.fbr_rate_desc || errors.retail_price || errors.sro_schedule_no ? true : undefined}
+          >
             <summary className="cursor-pointer px-4 py-3 font-display text-xl font-semibold">
-              Tax details for FBR (optional)
+              Tax details for FBR{fbrSettings.enabled ? "" : " (optional)"}
             </summary>
             <div className="space-y-4 border-t border-line px-4 py-4">
               <p className="text-sm text-lead">
-                Not needed yet. Filling these in now saves time when invoices
-                are connected to FBR later.
+                {fbrSettings.enabled
+                  ? "FBR bills need the HS code, unit and GST rate of every taxable item."
+                  : "Not needed until FBR bills are switched on. Filling these in now saves time later."}
               </p>
+
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5"
+                  checked={form.is_taxable !== false}
+                  onChange={(e) => set("is_taxable", e.target.checked)}
+                />
+                <span className="text-sm font-medium">Taxable item (reported to FBR)</span>
+              </label>
+
               <div className="grid grid-cols-2 gap-4">
-                <TextField
+                <FbrPicker
                   id="hs_code"
                   label="HS code"
                   value={form.hs_code}
                   onChange={(v) => set("hs_code", v)}
+                  rows={hsRows}
+                  pick="code"
                   error={errors.hs_code}
                   placeholder="0000.0000"
                   inputMode="decimal"
+                  hint={hsRows.length === 0 ? "FBR list not loaded yet. Use the format 0000.0000." : undefined}
                 />
-                <TextField
+                <FbrPicker
                   id="uom"
                   label="Unit of measure"
                   value={form.uom}
                   onChange={(v) => set("uom", v)}
+                  rows={uomChoices}
+                  pick="label"
                   error={errors.uom}
-                  hint="Must match FBR's list exactly, including capital letters."
+                  hint={uomRows.length === 0 ? "Must match FBR's list exactly, including capital letters." : undefined}
                 />
               </div>
+
+              {form.is_taxable !== false && (
+                <>
+                  <div>
+                    <label htmlFor="sale_type" className="mb-1.5 block text-sm font-medium">
+                      FBR sale type
+                    </label>
+                    <select id="sale_type" className="input" value={form.sale_type} onChange={(e) => set("sale_type", e.target.value)}>
+                      {saleTypes.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                      {form.sale_type && !saleTypes.includes(form.sale_type) && <option value={form.sale_type}>{form.sale_type}</option>}
+                    </select>
+                    <p className="mt-1 text-sm text-lead">
+                      Car and storage batteries: 3rd Schedule Goods. Solar panels at 10%: Goods at Reduced Rate. Inverters, lithium batteries, cables: standard rate.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <TextField
+                        id="fbr_rate_desc"
+                        label="GST rate"
+                        value={form.fbr_rate_desc ?? ""}
+                        onChange={(v) => set("fbr_rate_desc", v)}
+                        error={errors.fbr_rate_desc}
+                        placeholder="18%"
+                        list="fbr-rates"
+                        hint="The bill reads the rate from here. Change it here if the budget changes it."
+                      />
+                      <datalist id="fbr-rates">
+                        {rates.map((r) => (
+                          <option key={r} value={r} />
+                        ))}
+                      </datalist>
+                    </div>
+                    {isThird && (
+                      <TextField
+                        id="retail_price"
+                        label="Printed retail price (per item)"
+                        value={form.retail_price ?? ""}
+                        onChange={(v) => set("retail_price", v)}
+                        error={errors.retail_price}
+                        inputMode="decimal"
+                        placeholder="42000"
+                        hint="The FBR tax is worked out on this price."
+                      />
+                    )}
+                  </div>
+
+                  {needsSroFields && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <TextField
+                        id="sro_schedule_no"
+                        label="SRO / Schedule number"
+                        value={form.sro_schedule_no ?? ""}
+                        onChange={(v) => set("sro_schedule_no", v)}
+                        error={errors.sro_schedule_no}
+                      />
+                      <TextField
+                        id="sro_item_serial_no"
+                        label="SRO item serial"
+                        value={form.sro_item_serial_no ?? ""}
+                        onChange={(v) => set("sro_item_serial_no", v)}
+                        error={errors.sro_item_serial_no}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </details>
         </div>
