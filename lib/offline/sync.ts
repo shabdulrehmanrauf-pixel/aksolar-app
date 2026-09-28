@@ -115,7 +115,7 @@ async function push(): Promise<boolean> {
       continue;
     }
 
-    if (action.action === "rpc" && action.rpc_name === "create_invoice" && result.resultId) {
+    if (action.action === "rpc" && (action.rpc_name === "create_invoice" || action.rpc_name === "create_fbr_bill") && result.resultId) {
       // Swap the temporary local invoice row for the real server id so the list
       // and detail screens stop showing "Pending sync" for this bill. Any
       // queued record_scrap_intake action in the same group will find the
