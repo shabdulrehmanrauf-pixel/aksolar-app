@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { canOpen } from "@/lib/roles";
+import { loadRoleInfo } from "@/lib/rolesServer";
 import type { ScrapBatteryInventory, ScrapBatterySale } from "@/lib/types";
 import ScrapClient from "./ScrapClient";
 
 export const metadata: Metadata = { title: "Scrap" };
 
 export default async function ScrapPage() {
+  if (!canOpen(await loadRoleInfo(), "/scrap")) redirect("/");
   const supabase = await createClient();
   const [stockRes, salesRes, soldRes] = await Promise.all([
     supabase
