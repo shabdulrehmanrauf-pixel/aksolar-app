@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { canOpen } from "@/lib/roles";
+import { loadRoleInfo } from "@/lib/rolesServer";
 import { loadPersona, loadKnowledge } from "@/lib/ai/persona";
 import { getShopSnapshot } from "@/lib/ai/context";
 import { askGroqWithTools, GroqConfigError, GroqRequestError, type ChatMessage } from "@/lib/ai/groq";
@@ -24,6 +26,9 @@ export async function GET() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+  if (!canOpen(await loadRoleInfo(), "/assistant")) {
+    return NextResponse.json({ error: "The assistant is not available for your role." }, { status: 403 });
+  }
 
   const persona = loadPersona();
   return NextResponse.json({ name: persona.name });
@@ -36,6 +41,9 @@ export async function POST(req: Request) {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Sign in to use the assistant." }, { status: 401 });
+  }
+  if (!canOpen(await loadRoleInfo(), "/assistant")) {
+    return NextResponse.json({ error: "The assistant is not available for your role." }, { status: 403 });
   }
 
   let body: { messages?: IncomingMessage[] };
