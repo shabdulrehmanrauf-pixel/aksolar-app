@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRoleInfo } from "@/components/RoleProvider";
+import { can } from "@/lib/roles";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Icon from "@/components/Icons";
@@ -107,6 +109,9 @@ export default function SalesClient({
   // are bill-specific ideas that don't apply to them, so mixing them in there would be confusing.
   const includeOthers = filter === "all";
   const router = useRouter();
+  const roleInfo = useRoleInfo();
+  const canDeleteBills = can(roleInfo, "sales.delete");
+  const canCreateBill = can(roleInfo, "sales.create");
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   // Ids currently playing the "just deleted" fade -- still rendered (greyed out and
   // unclickable) for DELETE_FADE_MS, then handed off to deletedIds so they vanish for good.
@@ -353,9 +358,11 @@ export default function SalesClient({
             : `${visible.length + chargingJobs.length + batteryClaims.length} sale entries saved`
         }
         action={
-          <Link href="/sales/new" className="btn btn-primary">
+          canCreateBill && (
+<Link href="/sales/new" className="btn btn-primary">
             <Icon name="plus" className="h-5 w-5" /> New bill
           </Link>
+)
         }
       />
 
@@ -368,9 +375,11 @@ export default function SalesClient({
           <p className="mx-auto mt-1 max-w-sm text-lead">
             Make your first bill. Stock goes down and udhaar is tracked for you.
           </p>
-          <Link href="/sales/new" className="btn btn-primary mt-5">
+          {canCreateBill && (
+<Link href="/sales/new" className="btn btn-primary mt-5">
             Make first bill
           </Link>
+)}
         </section>
       ) : (
         <>
@@ -492,7 +501,8 @@ export default function SalesClient({
                             )}
                           </td>
                           <td className="px-3 py-3.5 text-right">
-                            <button
+                            {(canDeleteBills || inv.pending) && (
+<button
                               type="button"
                               onClick={() => askDelete(inv)}
                               disabled={fading}
@@ -502,6 +512,7 @@ export default function SalesClient({
                             >
                               <Icon name="trash" className="h-5 w-5" />
                             </button>
+)}
                           </td>
                         </tr>
                       );
@@ -534,7 +545,8 @@ export default function SalesClient({
                             >
                               <Icon name="chevron" className="h-4 w-4" />
                             </Link>
-                            <button
+                            {canDeleteBills && (
+<button
                               type="button"
                               onClick={() => askDeleteOther(row)}
                               aria-label={`Delete ${row.kind === "charging" ? "charging slip" : "claim"} ${row.number}`}
@@ -543,6 +555,7 @@ export default function SalesClient({
                             >
                               <Icon name="trash" className="h-5 w-5" />
                             </button>
+)}
                           </div>
                         </td>
                       </tr>
@@ -610,7 +623,8 @@ export default function SalesClient({
                           {body}
                         </Link>
                       )}
-                      <button
+                      {(canDeleteBills || inv.pending) && (
+<button
                         type="button"
                         onClick={() => askDelete(inv)}
                         disabled={fading}
@@ -619,6 +633,7 @@ export default function SalesClient({
                       >
                         <Icon name="trash" className="h-5 w-5" />
                       </button>
+)}
                     </li>
                   );
                 })}
@@ -645,7 +660,8 @@ export default function SalesClient({
                       </span>
                       <Icon name="chevron" className="h-4 w-4 text-lead/60" />
                     </Link>
-                    <button
+                    {canDeleteBills && (
+<button
                       type="button"
                       onClick={() => askDeleteOther(row)}
                       aria-label={`Delete ${row.kind === "charging" ? "charging slip" : "claim"} ${row.number}`}
@@ -653,6 +669,7 @@ export default function SalesClient({
                     >
                       <Icon name="trash" className="h-5 w-5" />
                     </button>
+)}
                   </li>
                 ))}
               </ul>
