@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRoleInfo } from "@/components/RoleProvider";
+import { can } from "@/lib/roles";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Icon from "@/components/Icons";
@@ -14,6 +16,7 @@ import PurchasePayBadge from "../PayBadge";
 import PurchaseActions from "./PurchaseActions";
 
 export default function PurchaseDetail({ purchase: p, items, payments, supplier }: PurchaseDocument) {
+  const roleInfo = useRoleInfo();
   const router = useRouter();
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
@@ -156,7 +159,7 @@ export default function PurchaseDetail({ purchase: p, items, payments, supplier 
             )}
           </section>
 
-          {p.status !== "Cancelled" && (
+          {p.status !== "Cancelled" && can(roleInfo, "purchases.manage") && (
             <section className="card anim-rise p-5" style={{ "--i": 4 } as React.CSSProperties}>
               <h2 className="font-display text-2xl font-semibold">Cancel this bill</h2>
               <p className="mt-2 text-[15px] text-lead">
