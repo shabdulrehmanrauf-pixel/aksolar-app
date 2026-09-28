@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { loadInvoiceDocument } from "@/lib/invoiceDoc";
+import { loadFbrStatus } from "@/lib/fbrStatusLoad";
 import { createClient } from "@/lib/supabase/server";
 import InvoiceDetail from "./InvoiceDetail";
 
@@ -19,6 +20,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const doc = await loadInvoiceDocument(id);
   if (!doc) notFound();
+  const fbr = await loadFbrStatus(doc.invoice.id);
 
   // Who made this bill, and who received each payment. If the Part 1 SQL has not been run yet,
   // the lookup simply fails and this small section is left out.
@@ -35,7 +37,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
   return (
     <>
-      <InvoiceDetail doc={doc} />
+      <InvoiceDetail doc={doc} fbr={fbr} />
       {(madeBy || pays.some((p) => p.received_by && names[p.received_by])) && (
         <section className="card mt-4 p-5">
           <h2 className="font-display text-2xl font-semibold">Who did this</h2>

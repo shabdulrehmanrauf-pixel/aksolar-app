@@ -16,8 +16,11 @@ import { getBrowserClient } from "@/lib/supabase/lazy";
 import type { PaymentMethod } from "@/lib/types";
 import PayBadge from "../PayBadge";
 import InvoiceActions from "./InvoiceActions";
+import FbrBadge from "../FbrBadge";
+import FbrCard from "./FbrCard";
+import { showFbrBadge, type FbrInfo } from "@/lib/fbrStatus";
 
-export default function InvoiceDetail({ doc }: { doc: InvoiceDocument }) {
+export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocument; fbr?: FbrInfo | null }) {
   const roleInfo = useRoleInfo();
   const canDeleteBill = can(roleInfo, "sales.delete");
   const { invoice: inv, items, payments } = doc;
@@ -133,6 +136,7 @@ export default function InvoiceDetail({ doc }: { doc: InvoiceDocument }) {
             <h1 className="mt-1 font-display text-4xl font-bold leading-none sm:text-5xl">{inv.invoice_number}</h1>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <PayBadge status={inv.payment_status} bill={inv.status} onDark />
+              {showFbrBadge(fbr ?? undefined, inv.status === "Cancelled") && fbr && <FbrBadge info={fbr} onDark />}
               {inv.status === "Cancelled" && <span className="text-sm text-white/70">This bill is cancelled.</span>}
             </div>
           </div>
@@ -200,6 +204,7 @@ export default function InvoiceDetail({ doc }: { doc: InvoiceDocument }) {
         </div>
 
         <div className="space-y-4">
+          {fbr && <FbrCard info={fbr} invoiceNumber={inv.invoice_number} cancelled={inv.status === "Cancelled"} />}
           <section className="card anim-rise p-5" style={{ "--i": 2 } as React.CSSProperties}>
             <h2 className="font-display text-2xl font-semibold">Customer</h2>
             <p className="mt-2 break-words font-semibold">
