@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Icon from "./Icons";
 import QuickActionsSheet from "./QuickActionsSheet";
+import { useRoleInfo } from "./RoleProvider";
+import { canOpen } from "@/lib/roles";
 import { MORE_ITEM, NAV_ITEMS, type NavItem } from "./nav";
 
 function isActive(pathname: string, item: NavItem) {
@@ -16,11 +18,12 @@ const byHref = (href: string) => NAV_ITEMS.find((i) => i.href === href)!;
 export default function NavLinks({ variant }: { variant: "sidebar" | "bottom" }) {
   const pathname = usePathname();
   const [quickOpen, setQuickOpen] = useState(false);
+  const roleInfo = useRoleInfo();
 
   if (variant === "sidebar") {
     return (
       <nav aria-label="Main" className="space-y-1">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.filter((item) => canOpen(roleInfo, item.href)).map((item) => {
           const active = isActive(pathname, item);
           return (
             <Link

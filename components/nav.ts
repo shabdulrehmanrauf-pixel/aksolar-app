@@ -32,6 +32,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/battery-services", label: "Battery services", icon: "plug", desktopOnly: true },
   { href: "/scrap", label: "Scrap", icon: "box", desktopOnly: true },
   { href: "/assistant", label: "Assistant", icon: "sparkle", desktopOnly: true },
+  // Owner only (see lib/roles.ts). On a phone they are under More.
+  { href: "/activity", label: "Activity log", icon: "shield", desktopOnly: true },
+  { href: "/team", label: "Team", icon: "idcard", desktopOnly: true },
 ];
 
 export const MORE_ITEM: NavItem = { href: "/more", label: "More", icon: "more" };
