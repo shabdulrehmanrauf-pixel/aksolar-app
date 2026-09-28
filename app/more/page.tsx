@@ -6,6 +6,8 @@ import InstallAppButton from "@/components/InstallAppButton";
 import PageHeader from "@/components/PageHeader";
 import SignOutButton from "@/components/SignOutButton";
 import { createClient } from "@/lib/supabase/server";
+import { ROLE_LABEL, canOpen } from "@/lib/roles";
+import { loadRoleInfo } from "@/lib/rolesServer";
 
 export const metadata: Metadata = { title: "More" };
 
@@ -32,6 +34,8 @@ const SHORTCUTS: { href: string; label: string; hint: string; icon: IconName; to
   { href: "/inventory?filter=low", label: "Low stock", hint: "Items that need reordering", icon: "alert", tone: "bg-terminal/10 text-terminal" },
   { href: "/battery-services", label: "Battery services", hint: "Charging slips and battery warranty claims", icon: "plug", tone: "bg-focus/10 text-focus" },
   { href: "/scrap", label: "Scrap", hint: "Old batteries taken in exchange, sold by weight", icon: "box", tone: "bg-lead/10 text-casing" },
+  { href: "/activity", label: "Activity log", hint: "Who added, changed or deleted what, and when", icon: "shield", tone: "bg-sun/25 text-amber-800" },
+  { href: "/team", label: "Team", hint: "Give staff and accountants their own logins", icon: "idcard", tone: "bg-focus/10 text-focus" },
 ];
 
 export default async function MorePage() {
@@ -40,23 +44,30 @@ export default async function MorePage() {
     data: { user },
   } = await supabase.auth.getUser();
   const email = user?.email ?? "Signed in";
+  const info = await loadRoleInfo();
+  const name = info.fullName || email;
+  const shortcuts = SHORTCUTS.filter((s) => canOpen(info, s.href.split("?")[0]));
 
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeader title="More" />
 
       <section className="card anim-rise mt-6 flex items-center gap-4 p-5" style={{ "--i": 1 } as React.CSSProperties}>
-        <Avatar name={email} size="lg" />
+        <Avatar name={name} size="lg" />
         <div className="min-w-0">
           <p className="text-sm text-lead">Signed in as</p>
           <p className="truncate font-semibold" title={email}>
+            {name}
+          </p>
+          <p className="truncate text-sm text-lead">
+            {info.role ? ROLE_LABEL[info.role] + " · " : ""}
             {email}
           </p>
         </div>
       </section>
 
       <ul className="anim-rise mt-4 space-y-2.5" style={{ "--i": 2 } as React.CSSProperties}>
-        {SHORTCUTS.map((s) => (
+        {shortcuts.map((s) => (
           <li key={s.href}>
             <Link href={s.href} className="card card-hover flex items-center gap-3.5 p-4">
               <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${s.tone}`}>
