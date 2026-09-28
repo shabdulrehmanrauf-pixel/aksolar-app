@@ -56,6 +56,8 @@ export function effectiveRole(info: RoleInfo): Role | null {
 // Any page not listed here (Home, Inventory, Customers, Sales, More, print slips) is open to every role.
 const ROLES_FOR_PAGE: { prefix: string; roles: Role[] }[] = [
   { prefix: "/team", roles: ["owner"] },
+  { prefix: "/sales/new", roles: ["owner", "counter_staff"] },
+  { prefix: "/purchases/new", roles: ["owner"] },
   { prefix: "/activity", roles: ["owner"] },
   { prefix: "/reports", roles: ["owner", "accountant"] },
   { prefix: "/purchases", roles: ["owner", "accountant"] },
@@ -91,6 +93,7 @@ export type Capability =
   | "cash.opening"
   | "battery.manage"
   | "scrap.sell"
+  | "cost.view"
   | "reports.view"
   | "team.manage"
   | "activity.view";
@@ -110,6 +113,7 @@ const ROLES_FOR: Record<Capability, Role[]> = {
   "cash.opening": ["owner", "accountant"],
   "battery.manage": ["owner", "counter_staff"],
   "scrap.sell": ["owner"],
+  "cost.view": ["owner", "accountant"],
   "reports.view": ["owner", "accountant"],
   "team.manage": ["owner"],
   "activity.view": ["owner"],
