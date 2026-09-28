@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRoleInfo } from "@/components/RoleProvider";
+import { can } from "@/lib/roles";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Icon from "@/components/Icons";
@@ -37,6 +39,8 @@ export default function PurchasesClient({
   const [purchases, setPurchases] = useState(serverPurchases);
   useEffect(() => setPurchases(serverPurchases), [serverPurchases]);
 
+  const roleInfo = useRoleInfo();
+  const canManage = can(roleInfo, "purchases.manage");
   const [target, setTarget] = useState<PurchaseInvoice | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -110,9 +114,11 @@ export default function PurchasesClient({
         title="Purchases"
         subtitle={purchases.length === 0 ? "Stock you receive from suppliers will appear here." : `${purchases.length} purchase bills`}
         action={
-          <Link href="/purchases/new" className="btn btn-primary">
+          canManage && (
+<Link href="/purchases/new" className="btn btn-primary">
             <Icon name="plus" className="h-5 w-5" /> Receive stock
           </Link>
+)
         }
       />
 
@@ -125,9 +131,11 @@ export default function PurchasesClient({
           <p className="mx-auto mt-2 max-w-md text-lead">
             Record stock as it comes in from a supplier -- quantities and cost update together, in one save.
           </p>
-          <Link href="/purchases/new" className="btn btn-primary mt-6">
+          {canManage && (
+<Link href="/purchases/new" className="btn btn-primary mt-6">
             Receive first stock
           </Link>
+)}
         </section>
       ) : (
         <>
@@ -228,7 +236,7 @@ export default function PurchasesClient({
                           <PurchasePayBadge tag={p.payment_tag} status={p.status} />
                         </td>
                         <td className="px-3 py-3.5 text-right">
-                          {p.status !== "Cancelled" && (
+                          {p.status !== "Cancelled" && canManage && (
                             <button
                               type="button"
                               onClick={() => askCancel(p)}
@@ -268,7 +276,7 @@ export default function PurchasesClient({
                       </span>
                       <Icon name="chevron" className="h-4 w-4 text-lead/60" />
                     </Link>
-                    {p.status !== "Cancelled" && (
+                    {p.status !== "Cancelled" && canManage && (
                       <button
                         type="button"
                         onClick={() => askCancel(p)}
