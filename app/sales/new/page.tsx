@@ -15,10 +15,10 @@ export default async function NewBillPage({ searchParams }: { searchParams: Prom
   const [inventory, customers] = await Promise.all([
     supabase
       .from("inventory")
-      .select("id,category,brand,model,type,voltage,plates,ah_rating,wattage,warranty_months,cost_price,sale_price,quantity")
+      .select("id,category,brand,model,type,voltage,plates,ah_rating,wattage,warranty_months,cost_price,sale_price,quantity,hs_code,uom,sale_type,fbr_rate_desc,is_taxable,retail_price,sro_schedule_no,sro_item_serial_no")
       .order("brand")
       .order("model"),
-    supabase.from("customers").select("id,name,phone,registration_type,cnic_or_ntn").order("name"),
+    supabase.from("customers").select("id,name,phone,registration_type,cnic_or_ntn,province,address").order("name"),
   ]);
 
   if (inventory.error || customers.error) {
@@ -33,7 +33,7 @@ export default async function NewBillPage({ searchParams }: { searchParams: Prom
     );
   }
 
-  const people = (customers.data ?? []) as (Pick<Customer, "id" | "name" | "phone" | "registration_type" | "cnic_or_ntn">)[];
+  const people = (customers.data ?? []) as (Pick<Customer, "id" | "name" | "phone" | "registration_type" | "cnic_or_ntn" | "province" | "address">)[];
   let initialCustomerId = customer && UUID.test(customer) && people.some((p) => p.id === customer) ? customer : null;
 
   // Opened from the assistant's "Edit" button: fill the normal screen with what it prepared.
