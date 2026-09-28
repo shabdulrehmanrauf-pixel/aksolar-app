@@ -9,6 +9,8 @@ import { formatDay, todayKarachi } from "@/lib/invoices";
 import { formatRs, formatRsCompact } from "@/lib/format";
 import { isLow, isOut, itemSpecs } from "@/lib/inventory";
 import { createClient } from "@/lib/supabase/server";
+import { can, canOpen } from "@/lib/roles";
+import { loadRoleInfo } from "@/lib/rolesServer";
 import type { Customer, Invoice, InventoryItem } from "@/lib/types";
 import PayBadge from "./sales/PayBadge";
 import StockGauge from "./inventory/StockGauge";
@@ -60,6 +62,15 @@ function todayLabel() {
 
 export default async function HomePage() {
   const supabase = await createClient();
+  const roleInfo = await loadRoleInfo();
+  const canBill = can(roleInfo, "sales.create");
+  const tiles = QUICK_TILES.filter((t) =>
+    t.href === "/inventory?add=1"
+      ? can(roleInfo, "inventory.edit")
+      : t.href === "/customers?add=1"
+        ? can(roleInfo, "customers.edit")
+        : canOpen(roleInfo, t.href.split("?")[0])
+  );
   const today = todayKarachi();
   const [inventory, recent, money, recentBills] = await Promise.all([
     supabase
@@ -172,9 +183,11 @@ export default async function HomePage() {
               </p>
             </div>
             <div className="hidden gap-2 sm:flex lg:hidden">
-              <Link href="/sales/new" className="btn btn-primary">
+              {canBill && (
+<Link href="/sales/new" className="btn btn-primary">
                 <Icon name="receipt" className="h-5 w-5" /> New bill
               </Link>
+)}
               <Link
                 href="/customers?add=1"
                 className="on-dark btn border border-white/20 bg-white/10 text-white hover:bg-white/20"
@@ -263,7 +276,7 @@ export default async function HomePage() {
             className="anim-rise grid grid-cols-3 gap-2.5 lg:col-start-2 lg:row-start-1 lg:grid-cols-2 lg:gap-3"
             style={delay(2)}
           >
-            {QUICK_TILES.map((t) => (
+            {tiles.map((t) => (
               <Link
                 key={t.href}
                 href={t.href}
@@ -417,9 +430,11 @@ export default async function HomePage() {
               <div className="px-5 pb-8 pt-3 text-center">
                 <p className="font-display text-xl font-semibold">No bills yet</p>
                 <p className="mx-auto mt-1 max-w-xs text-lead">Your latest bills will show here.</p>
-                <Link href="/sales/new" className="btn btn-primary mt-4">
+                {canBill && (
+<Link href="/sales/new" className="btn btn-primary mt-4">
                   Make first bill
                 </Link>
+)}
               </div>
             ) : (
               <ul className="px-2 pb-3">
