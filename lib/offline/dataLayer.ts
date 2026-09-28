@@ -117,5 +117,6 @@ export async function offlineDelete(
 function isLikelyValidationError(error: { code?: string }): boolean {
   // 22*/23* Postgres error classes are data problems (bad input, constraint violation),
   // not connectivity problems -- no point queueing those, they will just fail again.
-  return !!error.code && /^(22|23)/.test(error.code);
+  // 42501 = "not allowed for your role": waiting will not fix it either.
+  return !!error.code && /^(22|23|42501)/.test(error.code);
 }
