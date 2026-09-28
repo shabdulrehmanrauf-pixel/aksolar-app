@@ -20,6 +20,8 @@ import {
 import { focusFirstError } from "@/lib/formFocus";
 import { offlineSave } from "@/lib/offline/dataLayer";
 import type { Customer } from "@/lib/types";
+import { FALLBACK_PROVINCES } from "@/lib/fbr";
+import { useFbrRef } from "@/lib/fbrRef";
 
 export type CustomerLite = Pick<Customer, "id" | "name" | "phone">;
 
@@ -45,6 +47,9 @@ export default function CustomerForm({
     setForm((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
   };
+
+  const provinceRows = useFbrRef("province");
+  const provinceOptions = provinceRows.length > 0 ? provinceRows.map((r) => r.label ?? r.code) : FALLBACK_PROVINCES;
 
   const phoneNormalized = normalizePhone(form.phone);
   const duplicate =
@@ -173,6 +178,27 @@ export default function CustomerForm({
                 onChange={(e) => set("address", e.target.value)}
                 className="input resize-none"
               />
+            </div>
+
+            <div>
+              <label htmlFor="c-province" className="mb-1.5 block text-sm font-medium">
+                Province
+              </label>
+              <select
+                id="c-province"
+                value={form.province ?? ""}
+                onChange={(e) => set("province", e.target.value)}
+                className="input"
+              >
+                <option value="">Not chosen</option>
+                {provinceOptions.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+                {form.province && !provinceOptions.includes(form.province) && <option value={form.province}>{form.province}</option>}
+              </select>
+              <p className="mt-1 text-sm text-lead">FBR bills need the buyer&apos;s province.</p>
             </div>
           </fieldset>
 
