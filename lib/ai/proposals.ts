@@ -911,6 +911,14 @@ export async function decideAction(supabase: Supa, id: string, decision: ActionD
         p_walkin_registration_type: p.customer.id ? null : "Unregistered",
         p_walkin_cnic_or_ntn: null,
       };
+      // While FBR is switched on, a bill with taxable items must be an FBR bill. That choice (and the buyer's
+      // province) lives on the New bill screen, so the assistant hands the bill over instead of saving it.
+      const { data: fbrProfile } = await supabase.from("business_profile").select("fbr_enabled").maybeSingle();
+      if (fbrProfile?.fbr_enabled) {
+        const message = "FBR bills are on, so this bill must be saved on the New bill screen. Tap Edit, then check the FBR bill box.";
+        await finish("failed", null, message);
+        return { ok: false, message: `The bill was not saved. ${message}` };
+      }
       const { data: invoiceId, error } = await supabase.rpc("create_invoice", sent);
       if (error || !invoiceId) {
         const message = error ? friendlyInvoiceError(error) : "The bill was not saved.";
