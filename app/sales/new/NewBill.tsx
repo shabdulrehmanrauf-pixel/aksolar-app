@@ -1,6 +1,8 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRoleInfo } from "@/components/RoleProvider";
+import { can } from "@/lib/roles";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import Icon from "@/components/Icons";
@@ -106,6 +108,9 @@ export default function NewBill({
   initialDraft?: BillDraft | null;
 }) {
   const router = useRouter();
+  const roleInfo = useRoleInfo();
+  const canOverridePrice = can(roleInfo, "price.override");
+  const canAddManualItem = can(roleInfo, "inventory.edit");
 
   // Same offline-cache pattern as Inventory/Customers: mirror fresh server data
   // into IndexedDB, then always read the bill screen's stock and customer list
@@ -859,9 +864,11 @@ export default function NewBill({
           <section className="card anim-rise p-4 sm:p-5" style={{ "--i": 2 } as React.CSSProperties}>
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-display text-2xl font-semibold">Items</h2>
-              <button type="button" className="btn btn-quiet btn-sm" onClick={() => setAddingItem(true)}>
+              {canAddManualItem && (
+<button type="button" className="btn btn-quiet btn-sm" onClick={() => setAddingItem(true)}>
                 <Icon name="plus" className="h-4 w-4" /> Item not in stock
               </button>
+)}
             </div>
 
             <div className="relative mt-3">
@@ -1030,7 +1037,9 @@ export default function NewBill({
                               onFocus={(e) => e.target.select()}
                               inputMode="decimal"
                               aria-invalid={c.rate == null}
-                              className="input h-9 w-full text-right tabular-nums"
+                              readOnly={!canOverridePrice}
+                              title={canOverridePrice ? undefined : "Only the Owner can change prices"}
+                              className={`input h-9 w-full text-right tabular-nums ${canOverridePrice ? "" : "bg-plate text-lead"}`}
                             />
                           </td>
                           <td className="px-3 py-2.5 text-right align-top font-display text-lg font-semibold tabular-nums">
