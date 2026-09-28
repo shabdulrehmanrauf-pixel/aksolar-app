@@ -36,6 +36,7 @@ const SHORTCUTS: { href: string; label: string; hint: string; icon: IconName; to
   { href: "/scrap", label: "Scrap", hint: "Old batteries taken in exchange, sold by weight", icon: "box", tone: "bg-lead/10 text-casing" },
   { href: "/activity", label: "Activity log", hint: "Who added, changed or deleted what, and when", icon: "shield", tone: "bg-sun/25 text-amber-800" },
   { href: "/team", label: "Team", hint: "Give staff and accountants their own logins", icon: "idcard", tone: "bg-focus/10 text-focus" },
+  { href: "/fbr", label: "FBR lists", hint: "Load HS codes, units and provinces for FBR bills", icon: "shield", tone: "bg-sun/25 text-amber-800" },
 ];
 
 export default async function MorePage() {
