@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRoleInfo } from "@/components/RoleProvider";
+import { can } from "@/lib/roles";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
@@ -61,6 +63,10 @@ export default function CustomerProfile({
   billsReady: boolean;
 }) {
   const router = useRouter();
+  const roleInfo = useRoleInfo();
+  const canEditCust = can(roleInfo, "customers.edit");
+  const canDeleteCust = can(roleInfo, "customers.delete");
+  const canBill = can(roleInfo, "sales.create");
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -113,9 +119,11 @@ export default function CustomerProfile({
         </div>
 
         <div className="relative mt-5 flex flex-wrap gap-2.5">
-          <Link href={`/sales/new?customer=${customer.id}`} className="on-dark btn btn-primary">
+          {canBill && (
+<Link href={`/sales/new?customer=${customer.id}`} className="on-dark btn btn-primary">
             <Icon name="receipt" className="h-5 w-5" /> New bill
           </Link>
+)}
           {customer.phone && (
             <>
               <a href={`tel:${customer.phone}`} className="on-dark btn border border-white/20 bg-white/10 text-white hover:bg-white/20">
@@ -131,14 +139,17 @@ export default function CustomerProfile({
               </a>
             </>
           )}
-          <button
+          {canEditCust && (
+<button
             type="button"
             onClick={() => setEditing(true)}
             className="on-dark btn border border-white/20 bg-white/10 text-white hover:bg-white/20"
           >
             <Icon name="edit" className="h-5 w-5" /> Edit
           </button>
-          <button
+)}
+          {canDeleteCust && (
+<button
             type="button"
             onClick={() => {
               setError(null);
@@ -150,6 +161,7 @@ export default function CustomerProfile({
             <Icon name="trash" className="h-5 w-5" />
             <span className="sm:inline">Delete</span>
           </button>
+)}
         </div>
       </section>
 
@@ -187,7 +199,7 @@ export default function CustomerProfile({
       <section className="card anim-rise mt-4 overflow-hidden" style={delay(3)}>
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-2 pt-5">
           <h2 className="font-display text-2xl font-semibold">Bills</h2>
-          {billsReady && bills.length > 0 && (
+          {billsReady && bills.length > 0 && canBill && (
             <Link href={`/sales/new?customer=${customer.id}`} className="btn btn-quiet btn-sm">
               <Icon name="plus" className="h-4 w-4" /> New bill
             </Link>
@@ -208,9 +220,11 @@ export default function CustomerProfile({
             <p className="mx-auto mt-1 max-w-md text-lead">
               Bills made for {customer.name} will appear here, with what they paid and what is still due.
             </p>
-            <Link href={`/sales/new?customer=${customer.id}`} className="btn btn-primary mt-4">
+            {canBill && (
+<Link href={`/sales/new?customer=${customer.id}`} className="btn btn-primary mt-4">
               Make first bill
             </Link>
+)}
           </div>
         ) : (
           <>
