@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRoleInfo } from "@/components/RoleProvider";
+import { can } from "@/lib/roles";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Icon, { type IconName } from "@/components/Icons";
@@ -77,6 +79,9 @@ export default function SupplierLedger({
   purchasesReady: boolean;
 }) {
   const router = useRouter();
+  const roleInfo = useRoleInfo();
+  const canManageSuppliers = can(roleInfo, "suppliers.manage");
+  const canReceiveStock = can(roleInfo, "purchases.manage");
   const [editing, setEditing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [tab, setTab] = useState<"ledger" | "purchases">("ledger");
@@ -112,9 +117,11 @@ export default function SupplierLedger({
         </div>
 
         <div className="relative mt-5 flex flex-wrap gap-2.5">
-          <Link href={`/purchases/new?supplier=${supplier.id}`} className="on-dark btn btn-primary">
+          {canReceiveStock && (
+<Link href={`/purchases/new?supplier=${supplier.id}`} className="on-dark btn btn-primary">
             <Icon name="truck" className="h-5 w-5" /> Receive stock
           </Link>
+)}
           {supplier.balance > 0 && (
             <Link href={`/payments/new?supplier=${supplier.id}`} className="on-dark btn border border-white/20 bg-white/10 text-white hover:bg-white/20">
               <Icon name="banknote" className="h-5 w-5" /> Make payment
@@ -125,13 +132,15 @@ export default function SupplierLedger({
               <Icon name="phone" className="h-5 w-5" /> Call
             </a>
           )}
-          <button
+          {canManageSuppliers && (
+<button
             type="button"
             onClick={() => setEditing(true)}
             className="on-dark btn border border-white/20 bg-white/10 text-white hover:bg-white/20"
           >
             <Icon name="edit" className="h-5 w-5" /> Edit
           </button>
+)}
         </div>
       </section>
 
@@ -207,9 +216,11 @@ export default function SupplierLedger({
             </span>
             <h3 className="mt-3 font-display text-2xl font-semibold">No purchase bills yet</h3>
             <p className="mx-auto mt-1 max-w-md text-lead">Stock received from {supplier.name} will appear here.</p>
-            <Link href={`/purchases/new?supplier=${supplier.id}`} className="btn btn-primary mt-4">
+            {canReceiveStock && (
+<Link href={`/purchases/new?supplier=${supplier.id}`} className="btn btn-primary mt-4">
               Receive first stock
             </Link>
+)}
           </div>
         ) : (
           <ul className="divide-y divide-line/60 px-2 py-2">
