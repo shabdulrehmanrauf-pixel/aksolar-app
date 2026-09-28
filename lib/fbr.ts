@@ -67,7 +67,7 @@ const KEYS: Record<FbrKind, { code: string[]; label: string[] }> = {
   province: { code: ["stateprovincedesc", "province", "name"], label: ["stateprovincedesc", "province", "name"] },
   uom: { code: ["description", "uom", "uom_desc"], label: ["description", "uom", "uom_desc"] },
   hs_code: { code: ["hs_code", "hscode"], label: ["description", "hs_description"] },
-  sale_type: { code: ["transactiontypedesc", "description", "saletype"], label: ["transactiontypedesc", "description", "saletype"] },
+  sale_type: { code: ["transaction_desc", "transactiontypedesc", "description", "saletype"], label: ["transaction_desc", "transactiontypedesc", "description", "saletype"] },
   rate: { code: ["rate_desc", "ratedesc"], label: ["rate_desc", "ratedesc"] },
   sro: { code: ["sro_desc", "srodesc", "sro_item_desc"], label: ["sro_desc", "srodesc", "sro_item_desc"] },
   hs_uom: { code: ["hs_code", "hscode"], label: ["description"] },
