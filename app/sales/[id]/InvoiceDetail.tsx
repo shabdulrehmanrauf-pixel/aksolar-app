@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Icon from "@/components/Icons";
+import { useRoleInfo } from "@/components/RoleProvider";
+import { can } from "@/lib/roles";
 import Sheet from "@/components/Sheet";
 import Toast from "@/components/Toast";
 import { formatPhone, formatRegNo, regNoKind } from "@/lib/customers";
@@ -16,6 +18,8 @@ import PayBadge from "../PayBadge";
 import InvoiceActions from "./InvoiceActions";
 
 export default function InvoiceDetail({ doc }: { doc: InvoiceDocument }) {
+  const roleInfo = useRoleInfo();
+  const canDeleteBill = can(roleInfo, "sales.delete");
   const { invoice: inv, items, payments } = doc;
   const router = useRouter();
   const [paying, setPaying] = useState(false);
@@ -35,7 +39,7 @@ export default function InvoiceDetail({ doc }: { doc: InvoiceDocument }) {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const canReceive = inv.status !== "Cancelled" && inv.due_total > 0;
+  const canReceive = inv.status !== "Cancelled" && inv.due_total > 0 && can(roleInfo, "payment.receive");
   const kind = inv.buyer_cnic_or_ntn ? regNoKind(inv.buyer_cnic_or_ntn) : null;
 
   function openPayment() {
@@ -254,7 +258,8 @@ export default function InvoiceDetail({ doc }: { doc: InvoiceDocument }) {
             )}
           </section>
 
-          <section className="card anim-rise p-5" style={{ "--i": 4 } as React.CSSProperties}>
+          {canDeleteBill && (
+<section className="card anim-rise p-5" style={{ "--i": 4 } as React.CSSProperties}>
             <h2 className="font-display text-2xl font-semibold">Delete this bill</h2>
             <p className="mt-2 text-[15px] text-lead">
               Removes the bill, its items and its payments completely. Use this for demo or test bills.
@@ -263,6 +268,7 @@ export default function InvoiceDetail({ doc }: { doc: InvoiceDocument }) {
               <Icon name="trash" className="h-5 w-5" /> Delete bill
             </button>
           </section>
+)}
         </div>
       </div>
 
