@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import Icon, { type IconName } from "./Icons";
+import { useRoleInfo } from "./RoleProvider";
+import { can, canOpen } from "@/lib/roles";
 
 type Action = {
   href: string;
@@ -28,6 +30,10 @@ const ACTIONS: Action[] = [
  * Sheet, tapping the dark backdrop closes this one -- it only launches other screens, nothing here
  * can be half-typed and lost. */
 export default function QuickActionsSheet({ onClose }: { onClose: () => void }) {
+  const roleInfo = useRoleInfo();
+  const actions = ACTIONS.filter((a) =>
+    a.href.startsWith("/customers") ? can(roleInfo, "customers.edit") : canOpen(roleInfo, a.href.split("?")[0])
+  );
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -68,7 +74,7 @@ export default function QuickActionsSheet({ onClose }: { onClose: () => void }) 
           </button>
         </div>
         <ul className="space-y-2 px-4 pb-4">
-          {ACTIONS.map((a) =>
+          {actions.map((a) =>
             a.soon ? (
               <li key={a.href}>
                 <div aria-disabled="true" className="flex items-center gap-3.5 rounded-2xl p-3.5 opacity-50">

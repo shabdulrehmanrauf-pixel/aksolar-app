@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRoleInfo } from "@/components/RoleProvider";
+import { can, canOpen } from "@/lib/roles";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { customerMatches, formatPhone } from "@/lib/customers";
@@ -60,6 +62,7 @@ export default function CommandPalette({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const roleInfo = useRoleInfo();
   const [query, setQuery] = useState("");
   const [stock, setStock] = useState<StockRow[]>([]);
   const [people, setPeople] = useState<CustomerRow[]>([]);
@@ -168,7 +171,14 @@ export default function CommandPalette({
 
   const hits = useMemo<Hit[]>(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return ACTIONS;
+    const actions = ACTIONS.filter((a) =>
+      a.href === "/inventory?add=1"
+        ? can(roleInfo, "inventory.edit")
+        : a.href === "/customers?add=1"
+          ? can(roleInfo, "customers.edit")
+          : canOpen(roleInfo, a.href.split("?")[0])
+    );
+    if (!q) return actions;
 
     const out: Hit[] = [];
 
@@ -222,9 +232,9 @@ export default function CommandPalette({
         })
       );
 
-    ACTIONS.filter((a) => a.title.toLowerCase().includes(q)).forEach((a) => out.push(a));
+    actions.filter((a) => a.title.toLowerCase().includes(q)).forEach((a) => out.push(a));
     return out;
-  }, [query, stock, people, bills]);
+  }, [query, stock, people, bills, roleInfo]);
 
   const go = useCallback(
     (hit: Hit) => {
