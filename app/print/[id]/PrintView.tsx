@@ -1,26 +1,90 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Icon from "@/components/Icons";
 import { formatPhone, formatRegNo, regNoKind } from "@/lib/customers";
-import { formatRs } from "@/lib/format";
+import { formatDate, formatRs } from "@/lib/format";
+import { createClient } from "@/lib/supabase/client";
+import FbrQr from "@/components/FbrQr";
+import FbrLogo from "@/components/FbrLogo";
+import {
+  FBR_PRINT_HEADER_COLUMNS,
+  FBR_VERIFY_TEXT,
+  computeFbrPrint,
+  fbrHasNumber,
+  fbrPrintHeaderFromRow,
+  type FbrPrintData,
+} from "@/lib/fbrPrint";
 import { formatDay, formatTime, methodLabel } from "@/lib/invoices";
 import type { InvoiceDocument } from "@/lib/invoiceDoc";
 
 /** The bill as it looks on paper (A4). "Print" also offers Save as PDF on every phone and computer. */
-export default function PrintView({ doc }: { doc: InvoiceDocument }) {
+export default function PrintView({ doc, fbr: fbrInitial = null }: { doc: InvoiceDocument; fbr?: FbrPrintData | null }) {
   const { invoice: inv, items, payments, seller } = doc;
   const params = useSearchParams();
   const [pdfNote, setPdfNote] = useState<string | null>(null);
 
-  // Opened from "Save and print" or "Print": open the print box once the page has drawn.
+  // FBR bill: the FBR number arrives from the shop PC a few seconds after the bill is saved.
+  const [fbrHead, setFbrHead] = useState(fbrInitial ? { status: fbrInitial.status, number: fbrInitial.number, environment: fbrInitial.environment, submittedAt: fbrInitial.submittedAt } : null);
+  const [gaveUp, setGaveUp] = useState(false);
+  const isFbr = !!fbrInitial && !!fbrHead;
+  const cancelled = inv.status === "Cancelled";
+  const hasNumber = !!fbrHead && fbrHasNumber(fbrHead);
+  // Printing has to wait for the FBR number (the paper must carry it). A cancelled bill that never reached FBR does not wait.
+  const needsNumber = isFbr && !hasNumber && !cancelled;
+  const waiting = needsNumber && !gaveUp && (fbrHead!.status === "pending" || fbrHead!.status === "sending");
+
+  // While waiting, look for the number every 3 seconds, for up to 90 seconds.
   useEffect(() => {
-    if (params.get("auto") !== "1") return;
+    if (!waiting) return;
+    let stopped = false;
+    let tries = 0;
+    const supabase = createClient();
+    const timer = setInterval(async () => {
+      tries += 1;
+      if (tries > 30) {
+        setGaveUp(true);
+        clearInterval(timer);
+        return;
+      }
+      if (typeof navigator !== "undefined" && !navigator.onLine) return;
+      try {
+        const { data, error } = await supabase
+          .from("fbr_invoices")
+          .select(FBR_PRINT_HEADER_COLUMNS)
+          .eq("invoice_id", inv.id)
+          .maybeSingle();
+        if (stopped || error || !data) return;
+        const h = fbrPrintHeaderFromRow(data);
+        if (h) setFbrHead(h);
+      } catch {
+        /* keep trying until the time is up */
+      }
+    }, 3000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [waiting, inv.id]);
+
+  // Opened from "Save and print" or "Print": open the print box once the page has drawn.
+  // For an FBR bill, only once the FBR number is on the page.
+  const printedRef = useRef(false);
+  useEffect(() => {
+    if (params.get("auto") !== "1" || printedRef.current) return;
+    if (needsNumber) return;
+    printedRef.current = true;
     const t = setTimeout(() => window.print(), 400);
     return () => clearTimeout(t);
-  }, [params]);
+  }, [params, needsNumber]);
+
+  const fbrCalc = useMemo(
+    () => (fbrInitial ? computeFbrPrint(inv.total_value, items, fbrInitial.lines) : null),
+    [fbrInitial, inv.total_value, items],
+  );
+  const sentAt = fbrHead?.submittedAt ? `${formatDate(fbrHead.submittedAt)}, ${formatTime(fbrHead.submittedAt)}` : null;
 
   async function downloadPdf() {
     setPdfNote(null);
@@ -55,6 +119,23 @@ export default function PrintView({ doc }: { doc: InvoiceDocument }) {
           <Icon name="download" className="h-5 w-5" /> Download PDF
         </button>
         {pdfNote && <p className="w-full text-sm text-terminal-deep">{pdfNote}</p>}
+        {isFbr && (
+          <p className="w-full text-sm text-lead">
+            Download PDF does not have the FBR number and QR yet. To keep a copy with them, use Print and choose Save as PDF.
+          </p>
+        )}
+        {isFbr && waiting && (
+          <p className="w-full rounded-lg bg-sun/25 px-3 py-2 text-sm font-semibold text-amber-900" role="status">
+            Waiting for the FBR invoice number. It normally takes about 15 seconds, and printing starts by itself.
+          </p>
+        )}
+        {isFbr && needsNumber && !waiting && (
+          <p className="w-full rounded-lg bg-sun/25 px-3 py-2 text-sm font-semibold text-amber-900" role="status">
+            {fbrHead!.status === "failed" || fbrHead!.status === "unknown"
+              ? "FBR has not accepted this bill. Please tell the Owner. You can still print, but the paper will have no FBR number."
+              : "The FBR number has not come yet. Check that the shop PC sender is running. You can print now, or open this page again later."}
+          </p>
+        )}
         <p className="w-full text-sm text-lead">To save a PDF from the print box, choose Save as PDF as the printer.</p>
       </div>
 
@@ -68,12 +149,18 @@ export default function PrintView({ doc }: { doc: InvoiceDocument }) {
             </p>
           </div>
           <div className="text-right">
-            <p className="font-display text-3xl font-bold leading-none">Sale Invoice</p>
+            <p className="font-display text-3xl font-bold leading-none">{isFbr ? "Sales Tax Invoice" : "Sale Invoice"}</p>
             <p className="mt-1.5 text-base font-semibold tabular-nums">{inv.invoice_number}</p>
             <p className="tabular-nums text-lead">{formatDay(inv.invoice_date)}</p>
             {inv.status === "Cancelled" && <p className="mt-1 font-bold text-terminal">CANCELLED</p>}
           </div>
         </header>
+
+        {fbrHead?.environment === "sandbox" && (
+          <p className="mt-3 rounded border-2 border-dashed border-terminal px-3 py-1.5 text-center font-bold text-terminal">
+            TEST INVOICE (FBR sandbox). Not a real FBR invoice.
+          </p>
+        )}
 
         <section className="mt-4">
           <p className="text-[11px] font-bold uppercase tracking-widest text-lead">Billed to</p>
@@ -88,34 +175,88 @@ export default function PrintView({ doc }: { doc: InvoiceDocument }) {
           {inv.note && <p className="mt-1">Note: {inv.note}</p>}
         </section>
 
-        <table className="mt-5 w-full text-left">
-          <thead>
-            <tr className="bg-plate text-[12px]">
-              <th className="w-8 px-2 py-2 font-bold">#</th>
-              <th className="px-2 py-2 font-bold">Item</th>
-              <th className="px-2 py-2 text-right font-bold">Qty</th>
-              <th className="px-2 py-2 text-right font-bold">Rate</th>
-              <th className="px-2 py-2 text-right font-bold">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it, i) => (
-              <tr key={it.id} className="break-inside-avoid border-b border-line/80">
-                <td className="px-2 py-2 align-top tabular-nums">{i + 1}</td>
-                <td className="px-2 py-2 align-top">
-                  {it.description}
-                  {it.hs_code && <span className="block text-[11px] text-lead">HS code {it.hs_code}</span>}
-                </td>
-                <td className="px-2 py-2 text-right align-top tabular-nums">{it.quantity}</td>
-                <td className="px-2 py-2 text-right align-top tabular-nums">{formatRs(it.rate)}</td>
-                <td className="px-2 py-2 text-right align-top font-bold tabular-nums">{formatRs(it.total)}</td>
+        {fbrCalc ? (
+          <div className="mt-5 overflow-x-auto print:overflow-visible">
+            <table className="w-full text-left text-[12px]">
+              <thead>
+                <tr className="bg-plate">
+                  <th className="w-6 px-1.5 py-2 font-bold">#</th>
+                  <th className="px-1.5 py-2 font-bold">Item</th>
+                  <th className="px-1.5 py-2 text-right font-bold">Qty</th>
+                  <th className="px-1.5 py-2 text-right font-bold">Rate</th>
+                  <th className="px-1.5 py-2 text-right font-bold">Value excl. tax</th>
+                  <th className="px-1.5 py-2 text-right font-bold">GST %</th>
+                  <th className="px-1.5 py-2 text-right font-bold">GST</th>
+                  <th className="px-1.5 py-2 text-right font-bold">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, i) => {
+                  const r = fbrCalc.rows[i];
+                  return (
+                    <tr key={it.id} className="break-inside-avoid border-b border-line/80">
+                      <td className="px-1.5 py-2 align-top tabular-nums">{i + 1}</td>
+                      <td className="px-1.5 py-2 align-top">
+                        {it.description}
+                        {it.hs_code && <span className="block text-[11px] text-lead">HS code {it.hs_code}</span>}
+                      </td>
+                      <td className="px-1.5 py-2 text-right align-top tabular-nums">{it.quantity}</td>
+                      <td className="px-1.5 py-2 text-right align-top tabular-nums">{formatRs(it.rate)}</td>
+                      <td className="px-1.5 py-2 text-right align-top tabular-nums">{r.known ? formatRs(r.valueExclTax) : "-"}</td>
+                      <td className="px-1.5 py-2 text-right align-top tabular-nums">{r.known ? r.rateDesc || "-" : "-"}</td>
+                      <td className="px-1.5 py-2 text-right align-top tabular-nums">
+                        {r.known ? formatRs(r.taxAmount) : "-"}
+                        {r.known && r.taxInside && r.taxAmount > 0 && <span aria-label="included in price"> *</span>}
+                      </td>
+                      <td className="px-1.5 py-2 text-right align-top font-bold tabular-nums">{formatRs(r.payable)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+  <table className="mt-5 w-full text-left">
+            <thead>
+              <tr className="bg-plate text-[12px]">
+                <th className="w-8 px-2 py-2 font-bold">#</th>
+                <th className="px-2 py-2 font-bold">Item</th>
+                <th className="px-2 py-2 text-right font-bold">Qty</th>
+                <th className="px-2 py-2 text-right font-bold">Rate</th>
+                <th className="px-2 py-2 text-right font-bold">Amount</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {items.map((it, i) => (
+                <tr key={it.id} className="break-inside-avoid border-b border-line/80">
+                  <td className="px-2 py-2 align-top tabular-nums">{i + 1}</td>
+                  <td className="px-2 py-2 align-top">
+                    {it.description}
+                    {it.hs_code && <span className="block text-[11px] text-lead">HS code {it.hs_code}</span>}
+                  </td>
+                  <td className="px-2 py-2 text-right align-top tabular-nums">{it.quantity}</td>
+                  <td className="px-2 py-2 text-right align-top tabular-nums">{formatRs(it.rate)}</td>
+                  <td className="px-2 py-2 text-right align-top font-bold tabular-nums">{formatRs(it.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
         <div className="mt-4 flex justify-end">
           <dl className="w-64 space-y-1 break-inside-avoid">
+            {fbrCalc && fbrCalc.taxAdded > 0 && (
+              <>
+                <div className="flex justify-between">
+                  <dt className="text-lead">Items total</dt>
+                  <dd className="tabular-nums">{formatRs(fbrCalc.subtotal)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-lead">GST added</dt>
+                  <dd className="tabular-nums">{formatRs(fbrCalc.taxAdded)}</dd>
+                </div>
+              </>
+            )}
             <div className="flex items-baseline justify-between">
               <dt className="text-base font-bold">Total</dt>
               <dd className="text-xl font-bold tabular-nums">{formatRs(inv.total_value)}</dd>
@@ -135,6 +276,12 @@ export default function PrintView({ doc }: { doc: InvoiceDocument }) {
           </dl>
         </div>
 
+        {fbrCalc && fbrCalc.taxIncluded > 0 && (
+          <p className="mt-2 text-right text-[11px] text-lead">
+            * Sales tax of {formatRs(fbrCalc.taxIncluded)} is already included in the price of the marked items.
+          </p>
+        )}
+
         {payments.length > 0 && (
           <section className="mt-5 break-inside-avoid">
             <p className="text-[11px] font-bold uppercase tracking-widest text-lead">Payments received</p>
@@ -149,6 +296,27 @@ export default function PrintView({ doc }: { doc: InvoiceDocument }) {
                 </li>
               ))}
             </ul>
+          </section>
+        )}
+
+        {isFbr && fbrHead && (
+          <section className="mt-6 break-inside-avoid border-t border-line pt-4" aria-label="FBR digital invoice">
+            {hasNumber ? (
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                <FbrQr value={fbrHead.number!} />
+                <div className="min-w-0">
+                  <FbrLogo />
+                  <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-lead">FBR invoice number</p>
+                  <p className="break-all text-base font-bold tabular-nums">{fbrHead.number}</p>
+                  {sentAt && <p className="text-[11px] text-lead">Reported to FBR: {sentAt}</p>}
+                  <p className="mt-1 max-w-xs text-[11px] text-lead">{FBR_VERIFY_TEXT}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[12px] font-bold text-lead">
+                {cancelled ? "This bill is cancelled and was not sent to FBR." : "FBR invoice number: not received yet."}
+              </p>
+            )}
           </section>
         )}
 
