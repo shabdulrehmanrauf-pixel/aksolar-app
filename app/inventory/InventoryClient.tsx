@@ -9,6 +9,8 @@ import PageHeader from "@/components/PageHeader";
 import Toast from "@/components/Toast";
 import { offlineDb } from "@/lib/offline/db";
 import { offlineDelete } from "@/lib/offline/dataLayer";
+import { useRoleInfo } from "@/components/RoleProvider";
+import { can } from "@/lib/roles";
 import { useLiveQuery } from "@/lib/offline/useLiveQuery";
 import { isBrowserOnline } from "@/lib/offline/net";
 import type { Category, InventoryItem } from "@/lib/types";
@@ -69,6 +71,10 @@ export default function InventoryClient({
   banner?: React.ReactNode;
 }) {
   const wantsAdd = useSearchParams().get("add") === "1";
+  const roleInfo = useRoleInfo();
+  const canEditStock = can(roleInfo, "inventory.edit");
+  const canReceive = can(roleInfo, "purchases.manage");
+  const seeCost = can(roleInfo, "cost.view");
 
   // The freshly server-fetched list only mirrors into the offline cache when we
   // are actually online -- if this page came from the service worker's offline
@@ -101,11 +107,11 @@ export default function InventoryClient({
 
   // Links to /inventory?add=1 (top bar, Home, search box) open the Add panel, then tidy the address bar.
   useEffect(() => {
-    if (!wantsAdd) return;
+    if (!wantsAdd || !canEditStock) return;
     setEditing(null);
     setFormOpen(true);
     window.history.replaceState(null, "", "/inventory");
-  }, [wantsAdd]);
+  }, [wantsAdd, canEditStock]);
 
   useEffect(() => {
     if (!toast) return;
@@ -221,12 +227,16 @@ export default function InventoryClient({
         }
         action={
           <div className="flex gap-2.5">
-            <Link href="/purchases/new" className="btn btn-quiet">
+            {canReceive && (
+<Link href="/purchases/new" className="btn btn-quiet">
               <Icon name="truck" className="h-5 w-5" /> Receive stock
             </Link>
-            <button type="button" onClick={openAdd} className="btn btn-primary">
+)}
+            {canEditStock && (
+<button type="button" onClick={openAdd} className="btn btn-primary">
               <Icon name="plus" className="h-5 w-5" /> Add item
             </button>
+)}
           </div>
         }
       />
@@ -336,9 +346,11 @@ export default function InventoryClient({
             <p className="mx-auto mt-2 max-w-sm text-lead">
               Add your first battery, solar panel or accessory to start tracking stock.
             </p>
-            <button type="button" onClick={openAdd} className="btn btn-primary mt-6">
+            {canEditStock && (
+<button type="button" onClick={openAdd} className="btn btn-primary mt-6">
               <Icon name="plus" className="h-5 w-5" /> Add first item
             </button>
+)}
           </div>
         ) : visible.length === 0 ? (
           <div className="card px-6 py-12 text-center">
@@ -358,7 +370,9 @@ export default function InventoryClient({
                 <thead className="border-b border-line bg-plate/60 text-xs uppercase tracking-[0.1em] text-lead">
                   <tr>
                     <th scope="col" className="px-5 py-3.5 font-medium">Item</th>
-                    <th scope="col" className="px-4 py-3.5 text-right font-medium">Cost</th>
+                    {seeCost && (
+<th scope="col" className="px-4 py-3.5 text-right font-medium">Cost</th>
+)}
                     <th scope="col" className="px-4 py-3.5 text-right font-medium">Price</th>
                     <th scope="col" className="px-4 py-3.5 font-medium">In stock</th>
                     <th scope="col" className="px-4 py-3.5"><span className="sr-only">Actions</span></th>
@@ -381,14 +395,17 @@ export default function InventoryClient({
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-right tabular-nums text-lead">{formatRs(item.cost_price)}</td>
+                      {seeCost && (
+<td className="px-4 py-3.5 text-right tabular-nums text-lead">{formatRs(item.cost_price)}</td>
+)}
                       <td className="px-4 py-3.5 text-right font-semibold tabular-nums">{formatRs(item.sale_price)}</td>
                       <td className="px-4 py-3.5">
                         <StockCell item={item} />
                       </td>
                       <td className="px-4 py-3.5">
                         <div className="flex justify-end gap-1.5">
-                          <Link
+                          {canReceive && (
+<Link
                             href={`/purchases/new?item=${item.id}`}
                             aria-label={`Restock ${item.brand} ${item.model}`}
                             title="Restock"
@@ -396,7 +413,9 @@ export default function InventoryClient({
                           >
                             <Icon name="truck" className="h-[18px] w-[18px]" />
                           </Link>
-                          <button
+)}
+                          {canEditStock && (
+<button
                             type="button"
                             onClick={() => openEdit(item)}
                             aria-label={`Edit ${item.brand} ${item.model}`}
@@ -405,7 +424,9 @@ export default function InventoryClient({
                           >
                             <Icon name="edit" className="h-[18px] w-[18px]" />
                           </button>
-                          <button
+)}
+                          {canEditStock && (
+<button
                             type="button"
                             onClick={() => askDelete(item)}
                             aria-label={`Delete ${item.brand} ${item.model}`}
@@ -414,6 +435,7 @@ export default function InventoryClient({
                           >
                             <Icon name="trash" className="h-[18px] w-[18px]" />
                           </button>
+)}
                         </div>
                       </td>
                     </tr>
@@ -444,13 +466,18 @@ export default function InventoryClient({
                       <span className="block font-display text-2xl font-semibold leading-none tabular-nums">
                         {formatRs(item.sale_price)}
                       </span>
-                      <span className="text-lead">cost {formatRs(item.cost_price)}</span>
+                      {seeCost && (
+<span className="text-lead">cost {formatRs(item.cost_price)}</span>
+)}
                     </div>
                     <div className="flex gap-2">
-                      <Link href={`/purchases/new?item=${item.id}`} aria-label={`Restock ${item.brand} ${item.model}`} className="btn btn-quiet btn-sm">
+                      {canReceive && (
+<Link href={`/purchases/new?item=${item.id}`} aria-label={`Restock ${item.brand} ${item.model}`} className="btn btn-quiet btn-sm">
                         <Icon name="truck" className="h-4 w-4" /> Restock
                       </Link>
-                      <button
+)}
+                      {canEditStock && (
+<button
                         type="button"
                         onClick={() => openEdit(item)}
                         aria-label={`Edit ${item.brand} ${item.model}`}
@@ -458,7 +485,9 @@ export default function InventoryClient({
                       >
                         <Icon name="edit" className="h-4 w-4" /> Edit
                       </button>
-                      <button
+)}
+                      {canEditStock && (
+<button
                         type="button"
                         onClick={() => askDelete(item)}
                         aria-label={`Delete ${item.brand} ${item.model}`}
@@ -466,6 +495,7 @@ export default function InventoryClient({
                       >
                         <Icon name="trash" className="h-4 w-4" />
                       </button>
+)}
                     </div>
                   </div>
                 </li>
