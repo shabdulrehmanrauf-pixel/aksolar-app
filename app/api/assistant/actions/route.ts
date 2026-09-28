@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { canOpen } from "@/lib/roles";
+import { loadRoleInfo } from "@/lib/rolesServer";
 import { decideAction } from "@/lib/ai/proposals";
 import type { ActionDecision } from "@/lib/ai/proposalTypes";
 
@@ -22,6 +24,9 @@ export async function POST(req: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, message: "Sign in again to continue." }, { status: 401 });
+  if (!canOpen(await loadRoleInfo(), "/assistant")) {
+    return NextResponse.json({ ok: false, message: "The assistant is not available for your role." }, { status: 403 });
+  }
 
   let body: { id?: unknown; decision?: unknown };
   try {
