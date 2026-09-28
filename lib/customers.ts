@@ -61,6 +61,7 @@ export type CustomerFormValues = {
   address: string;
   registration_type: RegistrationType;
   cnic_or_ntn: string;
+  province?: string; // exact FBR province name; optional so the AI assistant's proposals keep working
 };
 
 export type CustomerErrors = Partial<Record<keyof CustomerFormValues, string>>;
@@ -96,6 +97,7 @@ export function customerPayload(f: CustomerFormValues) {
     address: f.address.trim() || null,
     registration_type: f.registration_type,
     cnic_or_ntn: cleanRegNo(f.cnic_or_ntn) || null,
+    ...(f.province === undefined ? {} : { province: f.province.trim() || null }),
   };
 }
 
@@ -106,6 +108,7 @@ export function customerToForm(c: Customer | null): CustomerFormValues {
     address: c?.address ?? "",
     registration_type: c?.registration_type ?? "Unregistered",
     cnic_or_ntn: c?.cnic_or_ntn ?? "",
+    province: c?.province ?? "",
   };
 }
 

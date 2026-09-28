@@ -156,6 +156,13 @@ export type ItemFormValues = {
   reorder_level: string;
   hs_code: string;
   uom: string;
+  // FBR tax setup. Optional so the AI assistant's item proposals (which never set them) keep working.
+  sale_type?: string;
+  fbr_rate_desc?: string;
+  is_taxable?: boolean;
+  retail_price?: string;
+  sro_schedule_no?: string;
+  sro_item_serial_no?: string;
 };
 
 export type ItemErrors = Partial<Record<keyof ItemFormValues, string>>;
@@ -164,17 +171,19 @@ export type ItemErrors = Partial<Record<keyof ItemFormValues, string>>;
 export const MONEY_RE = /^\d+(\.\d{1,2})?$/;
 const WHOLE = /^\d+$/;
 
-export function validateItem(f: ItemFormValues): ItemErrors {
+type SpecKey = "voltage" | "plates" | "ah_rating" | "wattage" | "warranty_months";
+
+export function validateItem(f: ItemFormValues, opts?: { fbrOn?: boolean }): ItemErrors {
   const e: ItemErrors = {};
   if (!f.brand.trim()) e.brand = "Enter the brand.";
   if (!f.model.trim()) e.model = "Enter the model.";
   if (f.category === "battery" && !f.type) e.type = "Choose the battery type.";
 
-  const optionalDecimal = (key: keyof ItemFormValues, label: string) => {
+  const optionalDecimal = (key: SpecKey, label: string) => {
     const v = f[key].trim();
     if (v && (!MONEY_RE.test(v) || Number(v) <= 0)) e[key] = `${label} must be a number above 0.`;
   };
-  const optionalWhole = (key: keyof ItemFormValues, label: string) => {
+  const optionalWhole = (key: SpecKey, label: string) => {
     const v = f[key].trim();
     if (v && (!WHOLE.test(v) || Number(v) <= 0)) e[key] = `${label} must be a whole number above 0.`;
   };
@@ -195,6 +204,23 @@ export function validateItem(f: ItemFormValues): ItemErrors {
   const hs = f.hs_code.trim();
   if (hs && !/^\d{4}\.\d{4}$/.test(hs)) e.hs_code = "Use 4 digits, a dot, then 4 digits. Example: 8507.2000";
   if (!f.uom.trim()) e.uom = "Enter the unit of measure.";
+
+  // FBR tax setup (only checked when the form has these fields)
+  if (f.is_taxable !== undefined) {
+    const rp = (f.retail_price ?? "").trim();
+    if (rp && (!MONEY_RE.test(rp) || Number(rp) <= 0)) e.retail_price = "Retail price must be a number above 0.";
+    if (/^3rd schedule/i.test(f.sale_type ?? "") && !rp) e.retail_price = "Third Schedule items need the printed retail price.";
+    if (f.is_taxable && opts?.fbrOn) {
+      const rate = (f.fbr_rate_desc ?? "").trim();
+      if (!rate) e.fbr_rate_desc = "Enter the GST rate, for example 18%.";
+      else if (!/^\d+(\.\d+)?\s*%$/.test(rate) && !/^exempt/i.test(rate)) e.fbr_rate_desc = "Use a form like 18%, or Exempt.";
+      if (!hs) e.hs_code = "A taxable item needs an HS code for FBR. Example: 8507.2000";
+    }
+    if (/reduced|^exempt/i.test(f.sale_type ?? "")) {
+      if (!(f.sro_schedule_no ?? "").trim()) e.sro_schedule_no = "Enter the SRO / Schedule number (FBR error 0077).";
+      if (!(f.sro_item_serial_no ?? "").trim()) e.sro_item_serial_no = "Enter the SRO item serial (FBR error 0078).";
+    }
+  }
 
   return e;
 }
@@ -220,5 +246,16 @@ export function itemPayload(f: ItemFormValues) {
     reorder_level: Number(f.reorder_level),
     hs_code: f.hs_code.trim() || null,
     uom: f.uom.trim(),
+    // FBR fields are saved only when the form has them, so nothing is overwritten by forms that do not.
+    ...(f.is_taxable === undefined
+      ? {}
+      : {
+          is_taxable: f.is_taxable,
+          sale_type: (f.sale_type ?? "").trim() || "Goods at standard rate (default)",
+          fbr_rate_desc: (f.fbr_rate_desc ?? "").trim() || null,
+          retail_price: (f.retail_price ?? "").trim() === "" ? null : Number(f.retail_price),
+          sro_schedule_no: (f.sro_schedule_no ?? "").trim() || null,
+          sro_item_serial_no: (f.sro_item_serial_no ?? "").trim() || null,
+        }),
   };
 }

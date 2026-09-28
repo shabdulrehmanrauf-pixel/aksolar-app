@@ -56,6 +56,7 @@ export function effectiveRole(info: RoleInfo): Role | null {
 // Any page not listed here (Home, Inventory, Customers, Sales, More, print slips) is open to every role.
 const ROLES_FOR_PAGE: { prefix: string; roles: Role[] }[] = [
   { prefix: "/team", roles: ["owner"] },
+  { prefix: "/fbr", roles: ["owner"] },
   { prefix: "/sales/new", roles: ["owner", "counter_staff"] },
   { prefix: "/purchases/new", roles: ["owner"] },
   { prefix: "/activity", roles: ["owner"] },

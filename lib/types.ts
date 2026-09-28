@@ -17,6 +17,13 @@ export type InventoryItem = {
   reorder_level: number;
   hs_code: string | null;
   uom: string;
+  // FBR tax setup (phase D1/D3). Optional: rows cached before the database upgrade do not have them.
+  sale_type?: string | null;
+  fbr_rate_desc?: string | null;
+  is_taxable?: boolean | null;
+  retail_price?: number | null;
+  sro_schedule_no?: string | null;
+  sro_item_serial_no?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -30,6 +37,7 @@ export type Customer = {
   address: string | null;
   registration_type: RegistrationType;
   cnic_or_ntn: string | null;
+  province?: string | null; // exact FBR province name (phase D1/D3)
   created_at: string;
   updated_at: string;
 };
