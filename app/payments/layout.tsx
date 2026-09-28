@@ -1,5 +1,10 @@
 import AppShell from "@/components/AppShell";
+import RequirePage from "@/components/RequirePage";
 
 export default function PaymentsLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <AppShell>
+      <RequirePage path="/payments">{children}</RequirePage>
+    </AppShell>
+  );
 }
