@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRoleInfo } from "@/components/RoleProvider";
+import { can } from "@/lib/roles";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Icon from "@/components/Icons";
@@ -31,6 +33,9 @@ export default function SuppliersClient({ suppliers: serverSuppliers }: { suppli
 
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("all");
+  const roleInfo = useRoleInfo();
+  const canManageSuppliers = can(roleInfo, "suppliers.manage");
+  const canReceiveStock = can(roleInfo, "purchases.manage");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SupplierBalance | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -106,12 +111,16 @@ export default function SuppliersClient({ suppliers: serverSuppliers }: { suppli
         }
         action={
           <div className="flex gap-2.5">
-            <Link href="/purchases/new" className="btn btn-quiet">
+            {canReceiveStock && (
+<Link href="/purchases/new" className="btn btn-quiet">
               <Icon name="truck" className="h-5 w-5" /> Receive stock
             </Link>
-            <button type="button" onClick={openAdd} className="btn btn-primary">
+)}
+            {canManageSuppliers && (
+<button type="button" onClick={openAdd} className="btn btn-primary">
               <Icon name="plus" className="h-5 w-5" /> Add supplier
             </button>
+)}
           </div>
         }
       />
@@ -165,9 +174,11 @@ export default function SuppliersClient({ suppliers: serverSuppliers }: { suppli
             <p className="mx-auto mt-2 max-w-sm text-lead">
               Add a supplier, or just start a purchase bill -- a new supplier can be added right there too.
             </p>
-            <button type="button" onClick={openAdd} className="btn btn-primary mt-6">
+            {canManageSuppliers && (
+<button type="button" onClick={openAdd} className="btn btn-primary mt-6">
               <Icon name="plus" className="h-5 w-5" /> Add first supplier
             </button>
+)}
           </div>
         ) : visible.length === 0 ? (
           <div className="card px-6 py-12 text-center">
@@ -216,7 +227,8 @@ export default function SuppliersClient({ suppliers: serverSuppliers }: { suppli
                         <Balance balance={s.balance} />
                       </td>
                       <td className="px-4 py-3.5 text-right">
-                        <button
+                        {canManageSuppliers && (
+<button
                           type="button"
                           onClick={() => openEdit(s)}
                           aria-label={`Edit ${s.name}`}
@@ -225,6 +237,7 @@ export default function SuppliersClient({ suppliers: serverSuppliers }: { suppli
                         >
                           <Icon name="edit" className="h-[18px] w-[18px]" />
                         </button>
+)}
                       </td>
                     </tr>
                   ))}
