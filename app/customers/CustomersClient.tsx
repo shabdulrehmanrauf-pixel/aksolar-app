@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRoleInfo } from "@/components/RoleProvider";
+import { can } from "@/lib/roles";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Avatar from "@/components/Avatar";
@@ -45,6 +47,8 @@ function ContactButtons({ phone, name }: { phone: string | null; name: string })
 export default function CustomersClient({ customers: serverCustomers }: { customers: Customer[] }) {
   const router = useRouter();
   const wantsAdd = useSearchParams().get("add") === "1";
+  const roleInfo = useRoleInfo();
+  const canEditCust = can(roleInfo, "customers.edit");
 
   // Same rule as InventoryClient: only mirror server props into the offline
   // cache when they are actually fresh (i.e. we're online right now).
@@ -68,11 +72,11 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
 
   // Links to /customers?add=1 (top bar, Home, search box) open the Add panel, then tidy the address bar.
   useEffect(() => {
-    if (!wantsAdd) return;
+    if (!wantsAdd || !canEditCust) return;
     setEditing(null);
     setFormOpen(true);
     window.history.replaceState(null, "", "/customers");
-  }, [wantsAdd]);
+  }, [wantsAdd, canEditCust]);
 
   useEffect(() => {
     if (!toast) return;
@@ -132,9 +136,11 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
             : `${customers.length} ${customers.length === 1 ? "customer" : "customers"} saved.`
         }
         action={
-          <button type="button" onClick={openAdd} className="btn btn-primary">
+          canEditCust && (
+<button type="button" onClick={openAdd} className="btn btn-primary">
             <Icon name="userplus" className="h-5 w-5" /> Add customer
           </button>
+)
         }
       />
 
@@ -187,9 +193,11 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
             <p className="mx-auto mt-2 max-w-sm text-lead">
               Save a customer once. Later you can find their name, number and full history in one search.
             </p>
-            <button type="button" onClick={openAdd} className="btn btn-primary mt-6">
+            {canEditCust && (
+<button type="button" onClick={openAdd} className="btn btn-primary mt-6">
               <Icon name="userplus" className="h-5 w-5" /> Add first customer
             </button>
+)}
           </div>
         ) : visible.length === 0 ? (
           <div className="card px-6 py-12 text-center">
@@ -253,7 +261,8 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
                       <td className="px-4 py-3.5">
                         <div className="flex justify-end gap-1.5">
                           <ContactButtons phone={c.phone} name={c.name} />
-                          <button
+                          {canEditCust && (
+<button
                             type="button"
                             onClick={() => openEdit(c)}
                             aria-label={`Edit ${c.name}`}
@@ -262,6 +271,7 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
                           >
                             <Icon name="edit" className="h-[18px] w-[18px]" />
                           </button>
+)}
                         </div>
                       </td>
                     </tr>
