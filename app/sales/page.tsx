@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import type { Invoice } from "@/lib/types";
+import { loadFbrStatuses } from "@/lib/fbrStatusLoad";
 import SalesClient, { type ChargingSaleRow, type ClaimSaleRow } from "./SalesClient";
 
 export const metadata: Metadata = { title: "Sales" };
@@ -8,7 +9,7 @@ export const metadata: Metadata = { title: "Sales" };
 export default async function SalesPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const { filter } = await searchParams;
   const supabase = await createClient();
-  const [invRes, chargingRes, claimRes] = await Promise.all([
+  const [invRes, chargingRes, claimRes, fbrByInvoice] = await Promise.all([
     supabase
       .from("invoice_balances")
       .select("*")
@@ -28,6 +29,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       .gt("extra_charges", 0)
       .order("received_date", { ascending: false })
       .limit(1000),
+    // FBR status per bill (D5a). Never fails the page: if the FBR tables are missing this is just empty.
+    loadFbrStatuses(),
   ]);
   const { data, error } = invRes;
 
@@ -56,6 +59,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       invoices={(data ?? []) as Invoice[]}
       chargingJobs={chargingJobs}
       batteryClaims={batteryClaims}
+      fbrByInvoice={fbrByInvoice}
       initialFilter={filter === "due" ? "due" : "all"}
     />
   );

@@ -19,6 +19,8 @@ import { notifySyncListeners } from "@/lib/offline/sync";
 import type { BatteryClaimStatus, ChargingJobStatus, Invoice } from "@/lib/types";
 import Toast from "@/components/Toast";
 import PayBadge from "./PayBadge";
+import FbrBadge from "./FbrBadge";
+import { showFbrBadge, type FbrInfo } from "@/lib/fbrStatus";
 
 type Filter = "all" | "due" | "paid";
 
@@ -96,11 +98,14 @@ export default function SalesClient({
   invoices: serverInvoices,
   chargingJobs = [],
   batteryClaims = [],
+  fbrByInvoice = {},
   initialFilter,
 }: {
   invoices: Invoice[];
   chargingJobs?: ChargingSaleRow[];
   batteryClaims?: ClaimSaleRow[];
+  /** FBR status per bill id (D5a). A bill with no entry is not an FBR bill and shows no FBR badge. */
+  fbrByInvoice?: Record<string, FbrInfo>;
   initialFilter: Filter;
 }) {
   const [query, setQuery] = useState("");
@@ -497,7 +502,12 @@ export default function SalesClient({
                                 Deleted
                               </span>
                             ) : (
-                              <PayBadge status={inv.payment_status} bill={inv.status} />
+                              <span className="flex flex-wrap items-center gap-1.5">
+                                <PayBadge status={inv.payment_status} bill={inv.status} />
+                                {showFbrBadge(fbrByInvoice[inv.id], inv.status === "Cancelled") && (
+                                  <FbrBadge info={fbrByInvoice[inv.id]} />
+                                )}
+                              </span>
                             )}
                           </td>
                           <td className="px-3 py-3.5 text-right">
@@ -591,7 +601,12 @@ export default function SalesClient({
                               Deleted
                             </span>
                           ) : (
-                            <PayBadge status={inv.payment_status} bill={inv.status} />
+                            <span className="flex flex-wrap items-center gap-1.5">
+                              <PayBadge status={inv.payment_status} bill={inv.status} />
+                              {showFbrBadge(fbrByInvoice[inv.id], inv.status === "Cancelled") && (
+                                <FbrBadge info={fbrByInvoice[inv.id]} />
+                              )}
+                            </span>
                           )}
                         </span>
                       </span>
