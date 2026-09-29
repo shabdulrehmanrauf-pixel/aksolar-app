@@ -9,8 +9,10 @@ import { formatDay, todayKarachi } from "@/lib/invoices";
 import { formatRs, formatRsCompact } from "@/lib/format";
 import { isLow, isOut, itemSpecs } from "@/lib/inventory";
 import { createClient } from "@/lib/supabase/server";
-import { can, canOpen } from "@/lib/roles";
+import { can, canOpen, effectiveRole } from "@/lib/roles";
 import { loadRoleInfo } from "@/lib/rolesServer";
+import { loadFbrHomeWarnings } from "@/lib/fbrHomeLoad";
+import FbrHomeWarnings from "@/components/FbrHomeWarnings";
 import type { Customer, Invoice, InventoryItem } from "@/lib/types";
 import PayBadge from "./sales/PayBadge";
 import StockGauge from "./inventory/StockGauge";
@@ -71,8 +73,10 @@ export default async function HomePage() {
         ? can(roleInfo, "customers.edit")
         : canOpen(roleInfo, t.href.split("?")[0])
   );
+  // Only the Owner and Accountant see FBR trouble on Home (same audience that sees FBR error detail on a bill).
+  const seesFbrWarnings = effectiveRole(roleInfo) === "owner" || effectiveRole(roleInfo) === "accountant";
   const today = todayKarachi();
-  const [inventory, recent, money, recentBills] = await Promise.all([
+  const [inventory, recent, money, recentBills, fbrWarnings] = await Promise.all([
     supabase
       .from("inventory")
       .select("id,category,brand,model,type,voltage,plates,ah_rating,wattage,warranty_months,quantity,reorder_level,cost_price,sale_price"),
@@ -88,6 +92,7 @@ export default async function HomePage() {
       .select("id,invoice_number,buyer_name,invoice_date,total_value,due_total,payment_status,status")
       .order("created_at", { ascending: false })
       .limit(5),
+    seesFbrWarnings ? loadFbrHomeWarnings() : Promise.resolve(null),
   ]);
   const billsReady = !money.error && !recentBills.error;
   const summary = (money.data ?? null) as MoneySummary | null;
@@ -240,6 +245,13 @@ export default async function HomePage() {
             </div>
           )}
         </section>
+
+        {/* FBR warnings */}
+        {fbrWarnings && (
+          <div className="anim-rise mt-4" style={delay(1)}>
+            <FbrHomeWarnings w={fbrWarnings} />
+          </div>
+        )}
 
         {/* Low-stock strip */}
         {items.length > 0 && (
