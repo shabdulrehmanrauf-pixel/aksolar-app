@@ -1,0 +1,558 @@
+category,schema_name,object_name,details
+TABLE/VIEW,public,ai_actions,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), user_id uuid DEFAULT auth.uid(), kind text NOT NULL, status text NOT NULL DEFAULT 'proposed'::text, user_message text, proposal jsonb NOT NULL, sent_payload jsonb, result jsonb, error text, created_at timestamp with time zone NOT NULL DEFAULT now(), resolved_at timestamp with time zone"
+TABLE/VIEW,public,audit_log,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), created_at timestamp with time zone NOT NULL DEFAULT now(), actor_id uuid, actor_name text NOT NULL DEFAULT 'Unknown'::text, actor_email text, actor_role text, action text NOT NULL, table_name text NOT NULL, record_id text, summary text NOT NULL, changed_fields ARRAY, old_data jsonb, new_data jsonb, is_detail boolean NOT NULL DEFAULT false, is_side_effect boolean NOT NULL DEFAULT false, txid bigint NOT NULL DEFAULT txid_current()"
+TABLE/VIEW,public,battery_claims,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), claim_number text NOT NULL DEFAULT ('CLM-'::text || lpad((nextval('claim_slip_seq'::regclass))::text, 6, '0'::text)), customer_id uuid, customer_name text NOT NULL, customer_phone text, battery_brand text NOT NULL, battery_model text NOT NULL, battery_number text, original_invoice_id uuid, distributor_id uuid, claim_amount numeric, extra_charges numeric, note text, status text NOT NULL DEFAULT 'received'::text, received_date date NOT NULL, sent_to_distributor_at timestamp with time zone, approved_at timestamp with time zone, rejected_at timestamp with time zone, given_to_customer_at timestamp with time zone, settled_at timestamp with time zone, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,battery_claims_by_distributor,"VIEW | COLUMNS: distributor_id uuid, distributor_name text, status text, count integer"
+TABLE/VIEW,public,battery_stock_summary,"VIEW | COLUMNS: kind text, status text, count integer"
+TABLE/VIEW,public,business_profile,"BASE TABLE | COLUMNS: id boolean NOT NULL DEFAULT true, business_name text NOT NULL DEFAULT 'Al Karam Battery and Solar'::text, ntn text, address text, province text, phone text, updated_at timestamp with time zone NOT NULL DEFAULT now(), fbr_enabled boolean NOT NULL DEFAULT false, fbr_environment text NOT NULL DEFAULT 'sandbox'::text, prices_include_tax boolean NOT NULL DEFAULT false"
+TABLE/VIEW,public,cash_settings,"BASE TABLE | COLUMNS: id boolean NOT NULL DEFAULT true, opening_balance numeric NOT NULL DEFAULT 0, opening_date date NOT NULL DEFAULT CURRENT_DATE, updated_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,charging_jobs,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), slip_number text NOT NULL DEFAULT ('CHG-'::text || lpad((nextval('charging_slip_seq'::regclass))::text, 6, '0'::text)), customer_id uuid, customer_name text NOT NULL, customer_phone text, battery_brand text NOT NULL, battery_model text NOT NULL, battery_number text, price numeric NOT NULL DEFAULT 0, note text, received_date date NOT NULL, due_date date NOT NULL, status text NOT NULL DEFAULT 'in_shop'::text, collected_at timestamp with time zone, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now(), outcome text, handover_amount numeric, handover_note text"
+TABLE/VIEW,public,charging_price_list,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), label text NOT NULL, price numeric NOT NULL DEFAULT 0, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,customers,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), name text NOT NULL, phone text, address text, registration_type text NOT NULL DEFAULT 'Unregistered'::text, cnic_or_ntn text, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now(), province text"
+TABLE/VIEW,public,distributors,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), name text NOT NULL, phone text, address text, note text, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now(), ntn_or_cnic text, opening_balance numeric NOT NULL DEFAULT 0, opening_balance_date date, is_active boolean NOT NULL DEFAULT true"
+TABLE/VIEW,public,expense_categories,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), name text NOT NULL, sort_order integer NOT NULL DEFAULT 0, excluded_from_profit boolean NOT NULL DEFAULT false, is_active boolean NOT NULL DEFAULT true, created_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,expense_details,"VIEW | COLUMNS: id uuid, client_id uuid, expense_number text, category_id uuid, amount numeric, expense_date date, method text, paid_to text, reference text, cheque_number text, cheque_date date, bank_name text, note text, status text, cancel_reason text, created_by uuid, created_at timestamp with time zone, updated_at timestamp with time zone, category_name text, excluded_from_profit boolean"
+TABLE/VIEW,public,expenses,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), client_id uuid, expense_number text NOT NULL DEFAULT ('EX-'::text || lpad((nextval('expense_number_seq'::regclass))::text, 6, '0'::text)), category_id uuid NOT NULL, amount numeric NOT NULL, expense_date date NOT NULL, method text NOT NULL DEFAULT 'cash'::text, paid_to text, reference text, cheque_number text, cheque_date date, bank_name text, note text, status text NOT NULL DEFAULT 'Valid'::text, cancel_reason text, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,fbr_heartbeat,"BASE TABLE | COLUMNS: id boolean NOT NULL DEFAULT true, last_seen timestamp with time zone, environment text, sender_version text, note text"
+TABLE/VIEW,public,fbr_invoice_items,"BASE TABLE | COLUMNS: invoice_item_id uuid NOT NULL, invoice_id uuid NOT NULL, hs_code text, product_description text, fbr_rate_desc text, uom text, quantity numeric, total_values numeric, value_sales_excl_st numeric, fixed_notified_value numeric, sales_tax_applicable numeric, sales_tax_withheld numeric NOT NULL DEFAULT 0, extra_tax numeric NOT NULL DEFAULT 0, further_tax numeric NOT NULL DEFAULT 0, fed_payable numeric NOT NULL DEFAULT 0, discount numeric NOT NULL DEFAULT 0, sro_schedule_no text, sro_item_serial_no text, sale_type text"
+TABLE/VIEW,public,fbr_invoices,"BASE TABLE | COLUMNS: invoice_id uuid NOT NULL, environment text NOT NULL DEFAULT 'sandbox'::text, buyer_province text, buyer_address text, invoice_ref_no text, scenario_id text, fbr_status text NOT NULL DEFAULT 'pending'::text, fbr_invoice_number text, submitted_at timestamp with time zone, error_code text, error_message text, attempts integer NOT NULL DEFAULT 0, next_retry_at timestamp with time zone, created_offline boolean NOT NULL DEFAULT false, created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now(), original_invoice_id uuid, debit_note_reason text"
+TABLE/VIEW,public,fbr_reference,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), kind text NOT NULL, code text NOT NULL DEFAULT ''::text, label text, payload jsonb, fetched_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,fbr_submissions,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), invoice_id uuid NOT NULL, environment text, attempted_at timestamp with time zone NOT NULL DEFAULT now(), http_status integer, fbr_status_code text, error_code text, error_message text, request_json jsonb, response_json jsonb"
+TABLE/VIEW,public,inventory,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), category text NOT NULL, brand text NOT NULL, model text NOT NULL, type text, voltage numeric, plates integer, ah_rating numeric, wattage integer, warranty_months integer, cost_price numeric NOT NULL DEFAULT 0, sale_price numeric NOT NULL DEFAULT 0, quantity integer NOT NULL DEFAULT 0, reorder_level integer NOT NULL DEFAULT 0, hs_code text, uom text NOT NULL DEFAULT 'Numbers, pieces, units'::text, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now(), sale_type text NOT NULL DEFAULT 'Goods at standard rate (default)'::text, fbr_rate_desc text, is_taxable boolean NOT NULL DEFAULT true, retail_price numeric, sro_schedule_no text, sro_item_serial_no text"
+TABLE/VIEW,public,invoice_balances,"VIEW | COLUMNS: id uuid, invoice_number text, invoice_type text, invoice_date date, customer_id uuid, buyer_name text, buyer_registration_type text, buyer_cnic_or_ntn text, buyer_address text, buyer_phone text, note text, total_value numeric, status text, payment_status text, created_by uuid, created_at timestamp with time zone, updated_at timestamp with time zone, paid_total numeric, due_total numeric"
+TABLE/VIEW,public,invoice_items,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), invoice_id uuid NOT NULL, inventory_id uuid NOT NULL, description text NOT NULL, hs_code text, uom text NOT NULL, sale_type text NOT NULL DEFAULT 'Goods at standard rate (default)'::text, cost_price numeric NOT NULL DEFAULT 0, quantity integer NOT NULL, rate numeric NOT NULL, value_excl_tax numeric NOT NULL, sales_tax_rate numeric NOT NULL DEFAULT 0, sales_tax numeric NOT NULL DEFAULT 0, total numeric NOT NULL, created_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,invoices,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), invoice_number text NOT NULL DEFAULT ('AK-'::text || lpad((nextval('invoice_number_seq'::regclass))::text, 6, '0'::text)), invoice_type text NOT NULL DEFAULT 'Sale Invoice'::text, invoice_date date NOT NULL, customer_id uuid, buyer_name text NOT NULL, buyer_registration_type text NOT NULL DEFAULT 'Unregistered'::text, buyer_cnic_or_ntn text, buyer_address text, buyer_phone text, note text, total_value numeric NOT NULL, status text NOT NULL DEFAULT 'Valid'::text, payment_status text NOT NULL, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now(), cancelled_at timestamp with time zone, cancel_reason text"
+TABLE/VIEW,public,payment_details,"VIEW | COLUMNS: id uuid, client_id uuid, payment_number text, supplier_id uuid, purchase_id uuid, amount numeric, method text, paid_at date, reference text, cheque_number text, cheque_date date, bank_name text, cheque_status text, note text, status text, cancel_reason text, created_by uuid, created_at timestamp with time zone, updated_at timestamp with time zone, supplier_name text, purchase_number text"
+TABLE/VIEW,public,payments,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), invoice_id uuid NOT NULL, amount numeric NOT NULL, method text NOT NULL DEFAULT 'cash'::text, paid_at timestamp with time zone NOT NULL DEFAULT now(), received_by uuid DEFAULT auth.uid(), note text"
+TABLE/VIEW,public,purchase_balances,"VIEW | COLUMNS: id uuid, client_id uuid, purchase_number text, supplier_id uuid, supplier_invoice_number text, invoice_date date, subtotal numeric, discount numeric, freight numeric, total_value numeric, note text, status text, cancelled_at timestamp with time zone, cancel_reason text, created_by uuid, created_at timestamp with time zone, updated_at timestamp with time zone, paid_total numeric, due_total numeric, payment_tag text"
+TABLE/VIEW,public,purchase_invoices,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), client_id uuid, purchase_number text NOT NULL DEFAULT ('PB-'::text || lpad((nextval('purchase_number_seq'::regclass))::text, 6, '0'::text)), supplier_id uuid NOT NULL, supplier_invoice_number text, invoice_date date NOT NULL, subtotal numeric NOT NULL, discount numeric NOT NULL DEFAULT 0, freight numeric NOT NULL DEFAULT 0, total_value numeric NOT NULL, note text, status text NOT NULL DEFAULT 'Valid'::text, cancelled_at timestamp with time zone, cancel_reason text, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,purchase_items,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), purchase_id uuid NOT NULL, inventory_id uuid NOT NULL, description text NOT NULL, quantity integer NOT NULL, unit_cost numeric NOT NULL, line_total numeric NOT NULL, created_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,scrap_battery_inventory,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), intake_number text NOT NULL DEFAULT ('SB-'::text || lpad((nextval('scrap_intake_number_seq'::regclass))::text, 6, '0'::text)), invoice_id uuid, customer_id uuid, customer_name text, brand text NOT NULL, model text NOT NULL, battery_type text, battery_number text, quantity integer NOT NULL DEFAULT 1, estimated_weight_kg numeric, note text, status text NOT NULL DEFAULT 'in_stock'::text, received_date date NOT NULL, sold_in_sale_id uuid, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,scrap_battery_sales,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), sale_number text NOT NULL DEFAULT ('SS-'::text || lpad((nextval('scrap_sale_number_seq'::regclass))::text, 6, '0'::text)), buyer_name text NOT NULL, buyer_phone text, total_weight_kg numeric NOT NULL, rate_per_kg numeric NOT NULL, total_amount numeric NOT NULL, sale_date date NOT NULL, note text, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,scrap_stock_summary,"VIEW | COLUMNS: batches_in_stock bigint, batteries_in_stock bigint, estimated_weight_in_stock_kg numeric, batches_sold bigint, batteries_sold bigint"
+TABLE/VIEW,public,stock_movements,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), inventory_id uuid NOT NULL, change integer NOT NULL, reason text NOT NULL, ref_table text, ref_id uuid, note text, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,supplier_balances,"VIEW | COLUMNS: id uuid, name text, phone text, address text, note text, ntn_or_cnic text, opening_balance numeric, opening_balance_date date, is_active boolean, created_at timestamp with time zone, updated_at timestamp with time zone, total_bought numeric, total_paid numeric, balance numeric, last_purchase_date date, last_payment_date date"
+TABLE/VIEW,public,supplier_ledger,"VIEW | COLUMNS: supplier_id uuid, event_date date, event_created_at timestamp with time zone, entry_type text, entry_label text, reference text, ref_id uuid, amount numeric, running_balance numeric"
+TABLE/VIEW,public,supplier_payments,"BASE TABLE | COLUMNS: id uuid NOT NULL DEFAULT gen_random_uuid(), client_id uuid, payment_number text NOT NULL DEFAULT ('SP-'::text || lpad((nextval('supplier_payment_number_seq'::regclass))::text, 6, '0'::text)), supplier_id uuid NOT NULL, purchase_id uuid, amount numeric NOT NULL, method text NOT NULL DEFAULT 'cash'::text, paid_at date NOT NULL, reference text, cheque_number text, cheque_date date, bank_name text, cheque_status text, note text, status text NOT NULL DEFAULT 'Valid'::text, cancel_reason text, created_by uuid DEFAULT auth.uid(), created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now()"
+TABLE/VIEW,public,user_roles,"BASE TABLE | COLUMNS: user_id uuid NOT NULL, role text NOT NULL, full_name text NOT NULL DEFAULT ''::text, is_active boolean NOT NULL DEFAULT true, created_at timestamp with time zone NOT NULL DEFAULT now(), updated_at timestamp with time zone NOT NULL DEFAULT now()"
+CONSTRAINT,public,ai_actions,ai_actions_user_id_fkey | FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,ai_actions,"ai_actions_status_check | CHECK ((status = ANY (ARRAY['proposed'::text, 'executing'::text, 'confirmed'::text, 'cancelled'::text, 'edited'::text, 'failed'::text])))"
+CONSTRAINT,public,ai_actions,"ai_actions_kind_check | CHECK ((kind = ANY (ARRAY['create_bill'::text, 'add_item'::text, 'add_customer'::text, 'add_scrap'::text, 'sell_scrap'::text, 'create_charging'::text, 'create_claim'::text])))"
+CONSTRAINT,public,ai_actions,ai_actions_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,audit_log,audit_log_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,audit_log,"audit_log_action_check | CHECK ((action = ANY (ARRAY['create'::text, 'update'::text, 'delete'::text])))"
+CONSTRAINT,public,battery_claims,"battery_claims_status_check | CHECK ((status = ANY (ARRAY['received'::text, 'sent_to_distributor'::text, 'approved'::text, 'rejected'::text, 'given_to_customer'::text, 'settled'::text])))"
+CONSTRAINT,public,battery_claims,battery_claims_claim_amount_check | CHECK (((claim_amount IS NULL) OR (claim_amount >= (0)::numeric)))
+CONSTRAINT,public,battery_claims,battery_claims_claim_number_key | UNIQUE (claim_number)
+CONSTRAINT,public,battery_claims,battery_claims_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,battery_claims,battery_claims_customer_id_fkey | FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
+CONSTRAINT,public,battery_claims,battery_claims_distributor_id_fkey | FOREIGN KEY (distributor_id) REFERENCES distributors(id) ON DELETE SET NULL
+CONSTRAINT,public,battery_claims,battery_claims_extra_charges_check | CHECK (((extra_charges IS NULL) OR (extra_charges >= (0)::numeric)))
+CONSTRAINT,public,battery_claims,battery_claims_original_invoice_id_fkey | FOREIGN KEY (original_invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
+CONSTRAINT,public,battery_claims,battery_claims_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,business_profile,business_profile_id_check | CHECK (id)
+CONSTRAINT,public,business_profile,"business_profile_fbr_environment_check | CHECK ((fbr_environment = ANY (ARRAY['sandbox'::text, 'production'::text])))"
+CONSTRAINT,public,business_profile,business_profile_ntn_check | CHECK (((ntn IS NULL) OR (ntn ~ '^([0-9]{7}|[0-9]{13})$'::text)))
+CONSTRAINT,public,business_profile,business_profile_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,cash_settings,cash_settings_id_check | CHECK (id)
+CONSTRAINT,public,cash_settings,cash_settings_opening_balance_check | CHECK ((opening_balance >= (0)::numeric))
+CONSTRAINT,public,cash_settings,cash_settings_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,charging_jobs,charging_jobs_customer_id_fkey | FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
+CONSTRAINT,public,charging_jobs,charging_jobs_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,charging_jobs,"charging_jobs_outcome_check | CHECK ((outcome = ANY (ARRAY['charged'::text, 'faulty'::text])))"
+CONSTRAINT,public,charging_jobs,"charging_jobs_status_check | CHECK ((status = ANY (ARRAY['in_shop'::text, 'collected'::text, 'unclaimed'::text])))"
+CONSTRAINT,public,charging_jobs,charging_jobs_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,charging_jobs,charging_jobs_slip_number_key | UNIQUE (slip_number)
+CONSTRAINT,public,charging_jobs,charging_jobs_price_check | CHECK ((price >= (0)::numeric))
+CONSTRAINT,public,charging_price_list,charging_price_list_price_check | CHECK ((price >= (0)::numeric))
+CONSTRAINT,public,charging_price_list,charging_price_list_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,charging_price_list,charging_price_list_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,charging_price_list,charging_price_list_label_key | UNIQUE (label)
+CONSTRAINT,public,charging_price_list,charging_price_list_label_check | CHECK (((char_length(label) >= 1) AND (char_length(label) <= 80)))
+CONSTRAINT,public,customers,customers_name_check | CHECK (((char_length(btrim(name)) >= 1) AND (char_length(btrim(name)) <= 120)))
+CONSTRAINT,public,customers,"customers_registration_type_check | CHECK ((registration_type = ANY (ARRAY['Registered'::text, 'Unregistered'::text])))"
+CONSTRAINT,public,customers,customers_registered_needs_number | CHECK (((registration_type <> 'Registered'::text) OR (cnic_or_ntn IS NOT NULL)))
+CONSTRAINT,public,customers,customers_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,customers,"customers_phone_check | CHECK (((phone IS NULL) OR (phone ~ '^\+?[0-9]{10,15}$'::text)))"
+CONSTRAINT,public,customers,customers_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,customers,customers_cnic_or_ntn_check | CHECK (((cnic_or_ntn IS NULL) OR (cnic_or_ntn ~ '^([0-9]{7}|[0-9]{13})$'::text)))
+CONSTRAINT,public,distributors,distributors_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,distributors,distributors_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,distributors,distributors_ntn_or_cnic_check | CHECK (((ntn_or_cnic IS NULL) OR (ntn_or_cnic ~ '^([0-9]{7}|[0-9]{13})$'::text)))
+CONSTRAINT,public,distributors,distributors_name_key | UNIQUE (name)
+CONSTRAINT,public,distributors,distributors_name_check | CHECK (((char_length(name) >= 1) AND (char_length(name) <= 120)))
+CONSTRAINT,public,expense_categories,expense_categories_name_key | UNIQUE (name)
+CONSTRAINT,public,expense_categories,expense_categories_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,expenses,expenses_expense_number_key | UNIQUE (expense_number)
+CONSTRAINT,public,expenses,expenses_client_id_key | UNIQUE (client_id)
+CONSTRAINT,public,expenses,expenses_cheque_needs_number | CHECK (((method <> 'cheque'::text) OR (cheque_number IS NOT NULL)))
+CONSTRAINT,public,expenses,expenses_amount_check | CHECK ((amount > (0)::numeric))
+CONSTRAINT,public,expenses,expenses_category_id_fkey | FOREIGN KEY (category_id) REFERENCES expense_categories(id) ON DELETE RESTRICT
+CONSTRAINT,public,expenses,"expenses_status_check | CHECK ((status = ANY (ARRAY['Valid'::text, 'Cancelled'::text])))"
+CONSTRAINT,public,expenses,expenses_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,expenses,"expenses_method_check | CHECK ((method = ANY (ARRAY['cash'::text, 'cheque'::text, 'online'::text, 'easypaisa'::text, 'jazzcash'::text])))"
+CONSTRAINT,public,expenses,expenses_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,fbr_heartbeat,fbr_heartbeat_id_check | CHECK (id)
+CONSTRAINT,public,fbr_heartbeat,fbr_heartbeat_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,fbr_invoice_items,fbr_invoice_items_invoice_id_fkey | FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+CONSTRAINT,public,fbr_invoice_items,fbr_invoice_items_invoice_item_id_fkey | FOREIGN KEY (invoice_item_id) REFERENCES invoice_items(id) ON DELETE CASCADE
+CONSTRAINT,public,fbr_invoice_items,fbr_invoice_items_pkey | PRIMARY KEY (invoice_item_id)
+CONSTRAINT,public,fbr_invoices,fbr_invoices_pkey | PRIMARY KEY (invoice_id)
+CONSTRAINT,public,fbr_invoices,"fbr_invoices_environment_check | CHECK ((environment = ANY (ARRAY['sandbox'::text, 'production'::text])))"
+CONSTRAINT,public,fbr_invoices,fbr_invoices_fbr_invoice_number_key | UNIQUE (fbr_invoice_number)
+CONSTRAINT,public,fbr_invoices,"fbr_invoices_fbr_status_check | CHECK ((fbr_status = ANY (ARRAY['pending'::text, 'sending'::text, 'sent'::text, 'failed'::text, 'unknown'::text])))"
+CONSTRAINT,public,fbr_invoices,fbr_invoices_invoice_id_fkey | FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE RESTRICT
+CONSTRAINT,public,fbr_invoices,fbr_invoices_original_invoice_id_fkey | FOREIGN KEY (original_invoice_id) REFERENCES invoices(id) ON DELETE RESTRICT
+CONSTRAINT,public,fbr_reference,"fbr_reference_kind_check | CHECK ((kind = ANY (ARRAY['hs_code'::text, 'uom'::text, 'province'::text, 'rate'::text, 'sale_type'::text, 'sro'::text, 'hs_uom'::text])))"
+CONSTRAINT,public,fbr_reference,"fbr_reference_kind_code_key | UNIQUE (kind, code)"
+CONSTRAINT,public,fbr_reference,fbr_reference_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,fbr_submissions,fbr_submissions_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,fbr_submissions,fbr_submissions_invoice_id_fkey | FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+CONSTRAINT,public,inventory,"inventory_category_check | CHECK ((category = ANY (ARRAY['battery'::text, 'panel'::text, 'accessory'::text])))"
+CONSTRAINT,public,inventory,inventory_sale_price_check | CHECK ((sale_price >= (0)::numeric))
+CONSTRAINT,public,inventory,inventory_retail_price_check | CHECK (((retail_price IS NULL) OR (retail_price >= (0)::numeric)))
+CONSTRAINT,public,inventory,inventory_reorder_level_check | CHECK ((reorder_level >= 0))
+CONSTRAINT,public,inventory,inventory_quantity_check | CHECK ((quantity >= 0))
+CONSTRAINT,public,inventory,inventory_plates_check | CHECK (((plates IS NULL) OR (plates > 0)))
+CONSTRAINT,public,inventory,inventory_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,inventory,inventory_hs_code_check | CHECK (((hs_code IS NULL) OR (hs_code ~ '^[0-9]{4}\.[0-9]{4}$'::text)))
+CONSTRAINT,public,inventory,inventory_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,inventory,inventory_cost_price_check | CHECK ((cost_price >= (0)::numeric))
+CONSTRAINT,public,inventory,inventory_ah_rating_check | CHECK (((ah_rating IS NULL) OR (ah_rating > (0)::numeric)))
+CONSTRAINT,public,inventory,inventory_wattage_check | CHECK (((wattage IS NULL) OR (wattage > 0)))
+CONSTRAINT,public,inventory,inventory_warranty_months_check | CHECK (((warranty_months IS NULL) OR (warranty_months > 0)))
+CONSTRAINT,public,inventory,inventory_voltage_check | CHECK (((voltage IS NULL) OR (voltage > (0)::numeric)))
+CONSTRAINT,public,invoice_items,invoice_items_invoice_id_fkey | FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+CONSTRAINT,public,invoice_items,invoice_items_total_check | CHECK ((total >= (0)::numeric))
+CONSTRAINT,public,invoice_items,invoice_items_inventory_id_fkey | FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE RESTRICT
+CONSTRAINT,public,invoice_items,invoice_items_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,invoice_items,invoice_items_quantity_check | CHECK ((quantity > 0))
+CONSTRAINT,public,invoice_items,invoice_items_rate_check | CHECK ((rate >= (0)::numeric))
+CONSTRAINT,public,invoice_items,invoice_items_sales_tax_check | CHECK ((sales_tax >= (0)::numeric))
+CONSTRAINT,public,invoice_items,invoice_items_sales_tax_rate_check | CHECK ((sales_tax_rate >= (0)::numeric))
+CONSTRAINT,public,invoice_items,invoice_items_value_excl_tax_check | CHECK ((value_excl_tax >= (0)::numeric))
+CONSTRAINT,public,invoices,invoices_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,invoices,invoices_total_value_check | CHECK ((total_value >= (0)::numeric))
+CONSTRAINT,public,invoices,"invoices_status_check | CHECK ((status = ANY (ARRAY['Valid'::text, 'Cancelled'::text, 'Edited'::text])))"
+CONSTRAINT,public,invoices,invoices_registered_buyer_needs_number | CHECK (((buyer_registration_type <> 'Registered'::text) OR (buyer_cnic_or_ntn IS NOT NULL)))
+CONSTRAINT,public,invoices,invoices_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,invoices,"invoices_payment_status_check | CHECK ((payment_status = ANY (ARRAY['Paid'::text, 'Partial'::text, 'Credit'::text])))"
+CONSTRAINT,public,invoices,"invoices_invoice_type_check | CHECK ((invoice_type = ANY (ARRAY['Sale Invoice'::text, 'Debit Note'::text])))"
+CONSTRAINT,public,invoices,invoices_invoice_number_key | UNIQUE (invoice_number)
+CONSTRAINT,public,invoices,invoices_customer_id_fkey | FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT
+CONSTRAINT,public,invoices,"invoices_buyer_registration_type_check | CHECK ((buyer_registration_type = ANY (ARRAY['Registered'::text, 'Unregistered'::text])))"
+CONSTRAINT,public,invoices,invoices_buyer_cnic_or_ntn_check | CHECK (((buyer_cnic_or_ntn IS NULL) OR (buyer_cnic_or_ntn ~ '^([0-9]{7}|[0-9]{13})$'::text)))
+CONSTRAINT,public,payments,payments_invoice_id_fkey | FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE RESTRICT
+CONSTRAINT,public,payments,"payments_method_check | CHECK ((method = ANY (ARRAY['cash'::text, 'bank'::text, 'other'::text])))"
+CONSTRAINT,public,payments,payments_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,payments,payments_received_by_fkey | FOREIGN KEY (received_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,payments,payments_amount_check | CHECK ((amount > (0)::numeric))
+CONSTRAINT,public,purchase_invoices,purchase_invoices_purchase_number_key | UNIQUE (purchase_number)
+CONSTRAINT,public,purchase_invoices,purchase_invoices_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,purchase_invoices,purchase_invoices_total_value_check | CHECK ((total_value >= (0)::numeric))
+CONSTRAINT,public,purchase_invoices,purchase_invoices_supplier_id_fkey | FOREIGN KEY (supplier_id) REFERENCES distributors(id) ON DELETE RESTRICT
+CONSTRAINT,public,purchase_invoices,purchase_invoices_subtotal_check | CHECK ((subtotal >= (0)::numeric))
+CONSTRAINT,public,purchase_invoices,"purchase_invoices_status_check | CHECK ((status = ANY (ARRAY['Valid'::text, 'Cancelled'::text])))"
+CONSTRAINT,public,purchase_invoices,purchase_invoices_freight_check | CHECK ((freight >= (0)::numeric))
+CONSTRAINT,public,purchase_invoices,purchase_invoices_discount_le_subtotal | CHECK ((discount <= subtotal))
+CONSTRAINT,public,purchase_invoices,purchase_invoices_discount_check | CHECK ((discount >= (0)::numeric))
+CONSTRAINT,public,purchase_invoices,purchase_invoices_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,purchase_invoices,purchase_invoices_client_id_key | UNIQUE (client_id)
+CONSTRAINT,public,purchase_items,purchase_items_line_total_check | CHECK ((line_total >= (0)::numeric))
+CONSTRAINT,public,purchase_items,purchase_items_inventory_id_fkey | FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE RESTRICT
+CONSTRAINT,public,purchase_items,purchase_items_unit_cost_check | CHECK ((unit_cost >= (0)::numeric))
+CONSTRAINT,public,purchase_items,purchase_items_quantity_check | CHECK ((quantity > 0))
+CONSTRAINT,public,purchase_items,purchase_items_purchase_id_fkey | FOREIGN KEY (purchase_id) REFERENCES purchase_invoices(id) ON DELETE CASCADE
+CONSTRAINT,public,purchase_items,purchase_items_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,scrap_battery_inventory,scrap_sold_needs_sale | CHECK (((status <> 'sold'::text) OR (sold_in_sale_id IS NOT NULL)))
+CONSTRAINT,public,scrap_battery_inventory,scrap_battery_inventory_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,scrap_battery_inventory,scrap_battery_inventory_customer_id_fkey | FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
+CONSTRAINT,public,scrap_battery_inventory,scrap_battery_inventory_estimated_weight_kg_check | CHECK (((estimated_weight_kg IS NULL) OR (estimated_weight_kg > (0)::numeric)))
+CONSTRAINT,public,scrap_battery_inventory,scrap_battery_inventory_intake_number_key | UNIQUE (intake_number)
+CONSTRAINT,public,scrap_battery_inventory,scrap_battery_inventory_invoice_id_fkey | FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
+CONSTRAINT,public,scrap_battery_inventory,scrap_battery_inventory_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,scrap_battery_inventory,scrap_battery_inventory_quantity_check | CHECK ((quantity > 0))
+CONSTRAINT,public,scrap_battery_inventory,scrap_battery_inventory_sold_in_sale_id_fkey | FOREIGN KEY (sold_in_sale_id) REFERENCES scrap_battery_sales(id) ON DELETE SET NULL
+CONSTRAINT,public,scrap_battery_inventory,"scrap_battery_inventory_status_check | CHECK ((status = ANY (ARRAY['in_stock'::text, 'sold'::text])))"
+CONSTRAINT,public,scrap_battery_sales,scrap_battery_sales_sale_number_key | UNIQUE (sale_number)
+CONSTRAINT,public,scrap_battery_sales,scrap_battery_sales_rate_per_kg_check | CHECK ((rate_per_kg >= (0)::numeric))
+CONSTRAINT,public,scrap_battery_sales,scrap_battery_sales_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,scrap_battery_sales,scrap_battery_sales_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,scrap_battery_sales,scrap_battery_sales_total_weight_kg_check | CHECK ((total_weight_kg > (0)::numeric))
+CONSTRAINT,public,scrap_battery_sales,scrap_battery_sales_total_amount_check | CHECK ((total_amount >= (0)::numeric))
+CONSTRAINT,public,stock_movements,stock_movements_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,stock_movements,stock_movements_change_check | CHECK ((change <> 0))
+CONSTRAINT,public,stock_movements,"stock_movements_reason_check | CHECK ((reason = ANY (ARRAY['opening'::text, 'purchase'::text, 'purchase_cancel'::text, 'adjustment'::text, 'sale'::text])))"
+CONSTRAINT,public,stock_movements,stock_movements_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,stock_movements,stock_movements_inventory_id_fkey | FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE RESTRICT
+CONSTRAINT,public,supplier_payments,supplier_payments_pkey | PRIMARY KEY (id)
+CONSTRAINT,public,supplier_payments,supplier_payments_payment_number_key | UNIQUE (payment_number)
+CONSTRAINT,public,supplier_payments,"supplier_payments_method_check | CHECK ((method = ANY (ARRAY['cash'::text, 'cheque'::text, 'online'::text, 'easypaisa'::text, 'jazzcash'::text])))"
+CONSTRAINT,public,supplier_payments,supplier_payments_created_by_fkey | FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+CONSTRAINT,public,supplier_payments,supplier_payments_client_id_key | UNIQUE (client_id)
+CONSTRAINT,public,supplier_payments,"supplier_payments_cheque_status_check | CHECK (((cheque_status IS NULL) OR (cheque_status = ANY (ARRAY['issued'::text, 'cleared'::text, 'bounced'::text]))))"
+CONSTRAINT,public,supplier_payments,supplier_payments_cheque_needs_number | CHECK (((method <> 'cheque'::text) OR (cheque_number IS NOT NULL)))
+CONSTRAINT,public,supplier_payments,supplier_payments_amount_check | CHECK ((amount > (0)::numeric))
+CONSTRAINT,public,supplier_payments,supplier_payments_supplier_id_fkey | FOREIGN KEY (supplier_id) REFERENCES distributors(id) ON DELETE RESTRICT
+CONSTRAINT,public,supplier_payments,"supplier_payments_status_check | CHECK ((status = ANY (ARRAY['Valid'::text, 'Cancelled'::text])))"
+CONSTRAINT,public,supplier_payments,supplier_payments_purchase_id_fkey | FOREIGN KEY (purchase_id) REFERENCES purchase_invoices(id) ON DELETE RESTRICT
+CONSTRAINT,public,user_roles,user_roles_user_id_fkey | FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+CONSTRAINT,public,user_roles,"user_roles_role_check | CHECK ((role = ANY (ARRAY['owner'::text, 'counter_staff'::text, 'accountant'::text])))"
+CONSTRAINT,public,user_roles,user_roles_pkey | PRIMARY KEY (user_id)
+INDEX,public,ai_actions,CREATE UNIQUE INDEX ai_actions_pkey ON public.ai_actions USING btree (id)
+INDEX,public,ai_actions,"CREATE INDEX ai_actions_status_idx ON public.ai_actions USING btree (status, created_at DESC)"
+INDEX,public,ai_actions,"CREATE INDEX ai_actions_user_idx ON public.ai_actions USING btree (user_id, created_at DESC)"
+INDEX,public,audit_log,CREATE INDEX audit_log_txid_idx ON public.audit_log USING btree (txid)
+INDEX,public,audit_log,CREATE UNIQUE INDEX audit_log_pkey ON public.audit_log USING btree (id)
+INDEX,public,audit_log,CREATE INDEX audit_log_created_idx ON public.audit_log USING btree (created_at DESC)
+INDEX,public,audit_log,"CREATE INDEX audit_log_actor_idx ON public.audit_log USING btree (actor_id, created_at DESC)"
+INDEX,public,audit_log,"CREATE INDEX audit_log_table_idx ON public.audit_log USING btree (table_name, created_at DESC)"
+INDEX,public,battery_claims,CREATE INDEX battery_claims_distributor_idx ON public.battery_claims USING btree (distributor_id)
+INDEX,public,battery_claims,CREATE UNIQUE INDEX battery_claims_claim_number_key ON public.battery_claims USING btree (claim_number)
+INDEX,public,battery_claims,CREATE INDEX battery_claims_status_idx ON public.battery_claims USING btree (status)
+INDEX,public,battery_claims,CREATE UNIQUE INDEX battery_claims_pkey ON public.battery_claims USING btree (id)
+INDEX,public,battery_claims,CREATE INDEX battery_claims_customer_idx ON public.battery_claims USING btree (customer_id)
+INDEX,public,battery_claims,CREATE INDEX battery_claims_received_idx ON public.battery_claims USING btree (received_date DESC)
+INDEX,public,business_profile,CREATE UNIQUE INDEX business_profile_pkey ON public.business_profile USING btree (id)
+INDEX,public,cash_settings,CREATE UNIQUE INDEX cash_settings_pkey ON public.cash_settings USING btree (id)
+INDEX,public,charging_jobs,CREATE UNIQUE INDEX charging_jobs_slip_number_key ON public.charging_jobs USING btree (slip_number)
+INDEX,public,charging_jobs,CREATE UNIQUE INDEX charging_jobs_pkey ON public.charging_jobs USING btree (id)
+INDEX,public,charging_jobs,CREATE INDEX charging_jobs_received_idx ON public.charging_jobs USING btree (received_date DESC)
+INDEX,public,charging_jobs,CREATE INDEX charging_jobs_status_idx ON public.charging_jobs USING btree (status)
+INDEX,public,charging_jobs,CREATE INDEX charging_jobs_customer_idx ON public.charging_jobs USING btree (customer_id)
+INDEX,public,charging_price_list,CREATE UNIQUE INDEX charging_price_list_pkey ON public.charging_price_list USING btree (id)
+INDEX,public,charging_price_list,CREATE UNIQUE INDEX charging_price_list_label_key ON public.charging_price_list USING btree (label)
+INDEX,public,customers,CREATE UNIQUE INDEX customers_pkey ON public.customers USING btree (id)
+INDEX,public,customers,CREATE INDEX customers_name_idx ON public.customers USING btree (lower(name))
+INDEX,public,customers,CREATE INDEX customers_phone_idx ON public.customers USING btree (phone)
+INDEX,public,distributors,CREATE UNIQUE INDEX distributors_name_lower_idx ON public.distributors USING btree (lower(name))
+INDEX,public,distributors,CREATE UNIQUE INDEX distributors_name_key ON public.distributors USING btree (name)
+INDEX,public,distributors,CREATE UNIQUE INDEX distributors_pkey ON public.distributors USING btree (id)
+INDEX,public,expense_categories,CREATE UNIQUE INDEX expense_categories_name_key ON public.expense_categories USING btree (name)
+INDEX,public,expense_categories,CREATE UNIQUE INDEX expense_categories_pkey ON public.expense_categories USING btree (id)
+INDEX,public,expenses,CREATE UNIQUE INDEX expenses_expense_number_key ON public.expenses USING btree (expense_number)
+INDEX,public,expenses,CREATE UNIQUE INDEX expenses_client_id_key ON public.expenses USING btree (client_id)
+INDEX,public,expenses,CREATE UNIQUE INDEX expenses_pkey ON public.expenses USING btree (id)
+INDEX,public,expenses,CREATE INDEX expenses_created_idx ON public.expenses USING btree (created_at DESC)
+INDEX,public,expenses,CREATE INDEX expenses_expense_date_idx ON public.expenses USING btree (expense_date DESC)
+INDEX,public,expenses,CREATE INDEX expenses_category_idx ON public.expenses USING btree (category_id)
+INDEX,public,fbr_heartbeat,CREATE UNIQUE INDEX fbr_heartbeat_pkey ON public.fbr_heartbeat USING btree (id)
+INDEX,public,fbr_invoice_items,CREATE INDEX fbr_invoice_items_invoice_idx ON public.fbr_invoice_items USING btree (invoice_id)
+INDEX,public,fbr_invoice_items,CREATE UNIQUE INDEX fbr_invoice_items_pkey ON public.fbr_invoice_items USING btree (invoice_item_id)
+INDEX,public,fbr_invoices,"CREATE INDEX fbr_invoices_status_idx ON public.fbr_invoices USING btree (fbr_status, created_at)"
+INDEX,public,fbr_invoices,CREATE UNIQUE INDEX fbr_invoices_pkey ON public.fbr_invoices USING btree (invoice_id)
+INDEX,public,fbr_invoices,CREATE UNIQUE INDEX fbr_invoices_fbr_invoice_number_key ON public.fbr_invoices USING btree (fbr_invoice_number)
+INDEX,public,fbr_reference,CREATE UNIQUE INDEX fbr_reference_pkey ON public.fbr_reference USING btree (id)
+INDEX,public,fbr_reference,"CREATE UNIQUE INDEX fbr_reference_kind_code_key ON public.fbr_reference USING btree (kind, code)"
+INDEX,public,fbr_submissions,CREATE UNIQUE INDEX fbr_submissions_pkey ON public.fbr_submissions USING btree (id)
+INDEX,public,fbr_submissions,"CREATE INDEX fbr_submissions_invoice_idx ON public.fbr_submissions USING btree (invoice_id, attempted_at DESC)"
+INDEX,public,inventory,"CREATE INDEX inventory_category_type_idx ON public.inventory USING btree (category, lower(type))"
+INDEX,public,inventory,"CREATE INDEX inventory_brand_model_idx ON public.inventory USING btree (lower(brand), lower(model))"
+INDEX,public,inventory,CREATE INDEX inventory_category_idx ON public.inventory USING btree (category)
+INDEX,public,inventory,CREATE UNIQUE INDEX inventory_pkey ON public.inventory USING btree (id)
+INDEX,public,invoice_items,CREATE INDEX invoice_items_inventory_idx ON public.invoice_items USING btree (inventory_id)
+INDEX,public,invoice_items,CREATE UNIQUE INDEX invoice_items_pkey ON public.invoice_items USING btree (id)
+INDEX,public,invoice_items,CREATE INDEX invoice_items_invoice_idx ON public.invoice_items USING btree (invoice_id)
+INDEX,public,invoices,CREATE UNIQUE INDEX invoices_invoice_number_key ON public.invoices USING btree (invoice_number)
+INDEX,public,invoices,CREATE UNIQUE INDEX invoices_pkey ON public.invoices USING btree (id)
+INDEX,public,invoices,CREATE INDEX invoices_customer_idx ON public.invoices USING btree (customer_id)
+INDEX,public,invoices,CREATE INDEX invoices_date_idx ON public.invoices USING btree (invoice_date DESC)
+INDEX,public,invoices,CREATE INDEX invoices_created_idx ON public.invoices USING btree (created_at DESC)
+INDEX,public,payments,CREATE INDEX payments_paid_at_idx ON public.payments USING btree (paid_at DESC)
+INDEX,public,payments,CREATE UNIQUE INDEX payments_pkey ON public.payments USING btree (id)
+INDEX,public,payments,CREATE INDEX payments_invoice_idx ON public.payments USING btree (invoice_id)
+INDEX,public,purchase_invoices,"CREATE UNIQUE INDEX purchase_invoices_supplier_number_idx ON public.purchase_invoices USING btree (supplier_id, lower(supplier_invoice_number)) WHERE ((supplier_invoice_number IS NOT NULL) AND (status = 'Valid'::text))"
+INDEX,public,purchase_invoices,CREATE INDEX purchase_invoices_created_idx ON public.purchase_invoices USING btree (created_at DESC)
+INDEX,public,purchase_invoices,CREATE INDEX purchase_invoices_date_idx ON public.purchase_invoices USING btree (invoice_date DESC)
+INDEX,public,purchase_invoices,CREATE INDEX purchase_invoices_supplier_idx ON public.purchase_invoices USING btree (supplier_id)
+INDEX,public,purchase_invoices,CREATE UNIQUE INDEX purchase_invoices_purchase_number_key ON public.purchase_invoices USING btree (purchase_number)
+INDEX,public,purchase_invoices,CREATE UNIQUE INDEX purchase_invoices_client_id_key ON public.purchase_invoices USING btree (client_id)
+INDEX,public,purchase_invoices,CREATE UNIQUE INDEX purchase_invoices_pkey ON public.purchase_invoices USING btree (id)
+INDEX,public,purchase_items,CREATE INDEX purchase_items_purchase_idx ON public.purchase_items USING btree (purchase_id)
+INDEX,public,purchase_items,CREATE UNIQUE INDEX purchase_items_pkey ON public.purchase_items USING btree (id)
+INDEX,public,purchase_items,CREATE INDEX purchase_items_inventory_idx ON public.purchase_items USING btree (inventory_id)
+INDEX,public,scrap_battery_inventory,CREATE INDEX scrap_battery_inventory_invoice_idx ON public.scrap_battery_inventory USING btree (invoice_id)
+INDEX,public,scrap_battery_inventory,CREATE INDEX scrap_battery_inventory_sale_idx ON public.scrap_battery_inventory USING btree (sold_in_sale_id)
+INDEX,public,scrap_battery_inventory,CREATE UNIQUE INDEX scrap_battery_inventory_pkey ON public.scrap_battery_inventory USING btree (id)
+INDEX,public,scrap_battery_inventory,CREATE UNIQUE INDEX scrap_battery_inventory_intake_number_key ON public.scrap_battery_inventory USING btree (intake_number)
+INDEX,public,scrap_battery_inventory,CREATE INDEX scrap_battery_inventory_status_idx ON public.scrap_battery_inventory USING btree (status)
+INDEX,public,scrap_battery_sales,CREATE UNIQUE INDEX scrap_battery_sales_sale_number_key ON public.scrap_battery_sales USING btree (sale_number)
+INDEX,public,scrap_battery_sales,CREATE INDEX scrap_battery_sales_date_idx ON public.scrap_battery_sales USING btree (sale_date DESC)
+INDEX,public,scrap_battery_sales,CREATE UNIQUE INDEX scrap_battery_sales_pkey ON public.scrap_battery_sales USING btree (id)
+INDEX,public,stock_movements,CREATE UNIQUE INDEX stock_movements_pkey ON public.stock_movements USING btree (id)
+INDEX,public,stock_movements,"CREATE INDEX stock_movements_inventory_created_idx ON public.stock_movements USING btree (inventory_id, created_at)"
+INDEX,public,supplier_payments,CREATE INDEX supplier_payments_supplier_idx ON public.supplier_payments USING btree (supplier_id)
+INDEX,public,supplier_payments,CREATE UNIQUE INDEX supplier_payments_payment_number_key ON public.supplier_payments USING btree (payment_number)
+INDEX,public,supplier_payments,CREATE UNIQUE INDEX supplier_payments_client_id_key ON public.supplier_payments USING btree (client_id)
+INDEX,public,supplier_payments,CREATE UNIQUE INDEX supplier_payments_pkey ON public.supplier_payments USING btree (id)
+INDEX,public,supplier_payments,CREATE INDEX supplier_payments_paid_at_idx ON public.supplier_payments USING btree (paid_at DESC)
+INDEX,public,supplier_payments,CREATE INDEX supplier_payments_purchase_idx ON public.supplier_payments USING btree (purchase_id)
+INDEX,public,user_roles,CREATE UNIQUE INDEX user_roles_pkey ON public.user_roles USING btree (user_id)
+RLS STATUS,public,ai_actions,RLS ENABLED
+RLS STATUS,public,audit_log,RLS ENABLED
+RLS STATUS,public,battery_claims,RLS ENABLED
+RLS STATUS,public,business_profile,RLS ENABLED
+RLS STATUS,public,cash_settings,RLS ENABLED
+RLS STATUS,public,charging_jobs,RLS ENABLED
+RLS STATUS,public,charging_price_list,RLS ENABLED
+RLS STATUS,public,customers,RLS ENABLED
+RLS STATUS,public,distributors,RLS ENABLED
+RLS STATUS,public,expense_categories,RLS ENABLED
+RLS STATUS,public,expenses,RLS ENABLED
+RLS STATUS,public,fbr_heartbeat,RLS ENABLED
+RLS STATUS,public,fbr_invoice_items,RLS ENABLED
+RLS STATUS,public,fbr_invoices,RLS ENABLED
+RLS STATUS,public,fbr_reference,RLS ENABLED
+RLS STATUS,public,fbr_submissions,RLS ENABLED
+RLS STATUS,public,inventory,RLS ENABLED
+RLS STATUS,public,invoice_items,RLS ENABLED
+RLS STATUS,public,invoices,RLS ENABLED
+RLS STATUS,public,payments,RLS ENABLED
+RLS STATUS,public,purchase_invoices,RLS ENABLED
+RLS STATUS,public,purchase_items,RLS ENABLED
+RLS STATUS,public,scrap_battery_inventory,RLS ENABLED
+RLS STATUS,public,scrap_battery_sales,RLS ENABLED
+RLS STATUS,public,stock_movements,RLS ENABLED
+RLS STATUS,public,supplier_payments,RLS ENABLED
+RLS STATUS,public,user_roles,RLS ENABLED
+POLICY,public,ai_actions,Users can view their own AI actions | SELECT | roles: {authenticated} | USING: (user_id = auth.uid()) | CHECK: -
+POLICY,public,audit_log,Owner can read the activity log | SELECT | roles: {authenticated} | USING: is_owner() | CHECK: -
+POLICY,public,battery_claims,Team can view battery_claims | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,business_profile,Team can view business_profile | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,cash_settings,"Team can view cash_settings | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = ANY (ARRAY['owner'::text, 'accountant'::text])) | CHECK: -"
+POLICY,public,charging_jobs,Team can view charging_jobs | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,charging_price_list,Team can view charging prices | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,charging_price_list,Owner can edit charging prices | UPDATE | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = 'owner'::text) | CHECK: (( SELECT current_app_role() AS current_app_role) = 'owner'::text)
+POLICY,public,charging_price_list,Owner can delete charging prices | DELETE | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = 'owner'::text) | CHECK: -
+POLICY,public,charging_price_list,Owner can add charging prices | INSERT | roles: {authenticated} | USING: - | CHECK: (( SELECT current_app_role() AS current_app_role) = 'owner'::text)
+POLICY,public,customers,"Owner and counter staff can add customers | INSERT | roles: {authenticated} | USING: - | CHECK: (( SELECT current_app_role() AS current_app_role) = ANY (ARRAY['owner'::text, 'counter_staff'::text]))"
+POLICY,public,customers,"Owner and counter staff can edit customers | UPDATE | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = ANY (ARRAY['owner'::text, 'counter_staff'::text])) | CHECK: (( SELECT current_app_role() AS current_app_role) = ANY (ARRAY['owner'::text, 'counter_staff'::text]))"
+POLICY,public,customers,Owner can delete customers | DELETE | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = 'owner'::text) | CHECK: -
+POLICY,public,customers,Team can view customers | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,distributors,Signed-in users can edit distributors | UPDATE | roles: {authenticated} | USING: true | CHECK: true
+POLICY,public,distributors,Signed-in users can add distributors | INSERT | roles: {authenticated} | USING: - | CHECK: true
+POLICY,public,distributors,Team can view distributors | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,expense_categories,Team can view expense_categories | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,expenses,"Team can view expenses | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = ANY (ARRAY['owner'::text, 'accountant'::text])) | CHECK: -"
+POLICY,public,fbr_heartbeat,Team can view fbr_heartbeat | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,fbr_invoice_items,Team can view fbr_invoice_items | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,fbr_invoices,Team can view fbr_invoices | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,fbr_reference,Team can view fbr_reference | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,fbr_submissions,"Owner can view fbr_submissions | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = ANY (ARRAY['owner'::text, 'accountant'::text])) | CHECK: -"
+POLICY,public,inventory,Owner can edit inventory | UPDATE | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = 'owner'::text) | CHECK: (( SELECT current_app_role() AS current_app_role) = 'owner'::text)
+POLICY,public,inventory,Team can view inventory | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,inventory,Owner can add inventory | INSERT | roles: {authenticated} | USING: - | CHECK: (( SELECT current_app_role() AS current_app_role) = 'owner'::text)
+POLICY,public,inventory,Owner can delete inventory | DELETE | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = 'owner'::text) | CHECK: -
+POLICY,public,invoice_items,Team can view invoice_items | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,invoices,Team can view invoices | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,payments,Team can view payments | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,purchase_invoices,"Team can view purchase_invoices | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = ANY (ARRAY['owner'::text, 'accountant'::text])) | CHECK: -"
+POLICY,public,purchase_items,"Team can view purchase_items | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = ANY (ARRAY['owner'::text, 'accountant'::text])) | CHECK: -"
+POLICY,public,scrap_battery_inventory,Team can view scrap_battery_inventory | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,scrap_battery_sales,Team can view scrap_battery_sales | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) IS NOT NULL) | CHECK: -
+POLICY,public,stock_movements,"Team can view stock_movements | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = ANY (ARRAY['owner'::text, 'accountant'::text])) | CHECK: -"
+POLICY,public,supplier_payments,"Team can view supplier_payments | SELECT | roles: {authenticated} | USING: (( SELECT current_app_role() AS current_app_role) = ANY (ARRAY['owner'::text, 'accountant'::text])) | CHECK: -"
+POLICY,public,user_roles,Users can read their own role | SELECT | roles: {authenticated} | USING: (user_id = auth.uid()) | CHECK: -
+FUNCTION,public,_core_cash_book_summary,"(p_from date, p_to date) RETURNS jsonb"
+FUNCTION,public,_core_financial_summary,"(p_from date, p_to date) RETURNS jsonb"
+FUNCTION,public,_core_report_summary,"(p_from date, p_to date, p_bucket text DEFAULT 'day'::text) RETURNS jsonb"
+FUNCTION,public,_core_supplier_summary,() RETURNS jsonb
+FUNCTION,public,_fbr_line_figures,"(p_sale_type text, p_rate_desc text, p_qty numeric, p_price numeric, p_retail numeric, p_sro text, p_sro_serial text, p_incl boolean, p_item text, OUT o_value numeric, OUT o_tax numeric, OUT o_total numeric, OUT o_fixed numeric, OUT o_add numeric) RETURNS record"
+FUNCTION,public,ai_claim_action,(p_id uuid) RETURNS ai_actions
+FUNCTION,public,ai_finish_action,"(p_id uuid, p_status text, p_sent jsonb, p_result jsonb, p_error text) RETURNS void"
+FUNCTION,public,ai_log_proposal,"(p_kind text, p_message text, p_proposal jsonb) RETURNS uuid"
+FUNCTION,public,ai_resolve_action,"(p_id uuid, p_status text) RETURNS void"
+FUNCTION,public,audit_describe,"(p_table text, p_action text, p_old jsonb, p_new jsonb, p_changed text[]) RETURNS text"
+FUNCTION,public,audit_row_change,() RETURNS trigger
+FUNCTION,public,audit_rs,(p_n numeric) RETURNS text
+FUNCTION,public,audit_val,"(p_key text, p_val text) RETURNS text"
+FUNCTION,public,cancel_expense,"(p_expense_id uuid, p_reason text) RETURNS void"
+FUNCTION,public,cancel_invoice,"(p_invoice_id uuid, p_reason text, p_restock boolean DEFAULT true) RETURNS void"
+FUNCTION,public,cancel_purchase,"(p_purchase_id uuid, p_reason text) RETURNS void"
+FUNCTION,public,cancel_supplier_payment,"(p_payment_id uuid, p_reason text) RETURNS void"
+FUNCTION,public,cash_book_summary,"(p_from date, p_to date) RETURNS jsonb"
+FUNCTION,public,create_battery_claim,"(p_customer_id uuid, p_walkin_name text, p_walkin_phone text, p_battery_brand text, p_battery_model text, p_battery_number text, p_original_invoice_id uuid, p_claim_amount numeric, p_extra_charges numeric, p_note text, p_received_date date, p_distributor_id uuid DEFAULT NULL::uuid, p_new_distributor_name text DEFAULT NULL::text) RETURNS uuid"
+FUNCTION,public,create_charging_job,"(p_customer_id uuid, p_walkin_name text, p_walkin_phone text, p_battery_brand text, p_battery_model text, p_battery_number text, p_price numeric, p_note text, p_received_date date) RETURNS uuid"
+FUNCTION,public,create_expense,"(p_client_id uuid, p_category_id uuid, p_amount numeric, p_expense_date date, p_method text, p_paid_to text, p_reference text, p_cheque_number text, p_cheque_date date, p_bank_name text, p_note text) RETURNS uuid"
+FUNCTION,public,create_fbr_bill,"(p_customer_id uuid, p_walkin_name text, p_note text, p_invoice_date date, p_items jsonb, p_paid numeric, p_method text, p_buyer_province text DEFAULT NULL::text, p_buyer_address text DEFAULT NULL::text, p_created_offline boolean DEFAULT false, p_walkin_phone text DEFAULT NULL::text, p_walkin_address text DEFAULT NULL::text, p_walkin_registration_type text DEFAULT NULL::text, p_walkin_cnic_or_ntn text DEFAULT NULL::text) RETURNS uuid"
+FUNCTION,public,create_fbr_debit_note,"(p_original_invoice_id uuid, p_items jsonb, p_reason text, p_invoice_date date DEFAULT CURRENT_DATE) RETURNS uuid"
+FUNCTION,public,create_invoice,"(p_customer_id uuid, p_walkin_name text, p_note text, p_invoice_date date, p_items jsonb, p_paid numeric, p_method text, p_walkin_phone text DEFAULT NULL::text, p_walkin_address text DEFAULT NULL::text, p_walkin_registration_type text DEFAULT 'Unregistered'::text, p_walkin_cnic_or_ntn text DEFAULT NULL::text) RETURNS uuid"
+FUNCTION,public,create_purchase,"(p_client_id uuid, p_supplier_id uuid, p_new_supplier_name text, p_new_supplier_phone text, p_new_supplier_address text, p_supplier_invoice_number text, p_invoice_date date, p_note text, p_lines jsonb, p_discount numeric, p_freight numeric, p_paid_now numeric, p_method text, p_reference text, p_cheque_number text, p_cheque_date date, p_bank_name text) RETURNS uuid"
+FUNCTION,public,create_unreported_bill,"(p_customer_id uuid, p_walkin_name text, p_note text, p_invoice_date date, p_items jsonb, p_paid numeric, p_method text, p_walkin_phone text DEFAULT NULL::text, p_walkin_address text DEFAULT NULL::text, p_walkin_registration_type text DEFAULT NULL::text, p_walkin_cnic_or_ntn text DEFAULT NULL::text, p_reason text DEFAULT NULL::text) RETURNS uuid"
+FUNCTION,public,current_app_role,() RETURNS text
+FUNCTION,public,delete_battery_claim,(p_id uuid) RETURNS void
+FUNCTION,public,delete_charging_job,(p_id uuid) RETURNS void
+FUNCTION,public,delete_invoice,"(p_invoice_id uuid, p_restock boolean DEFAULT true) RETURNS void"
+FUNCTION,public,delete_sandbox_fbr_bill,"(p_invoice_id uuid, p_restock boolean DEFAULT true) RETURNS void"
+FUNCTION,public,enforce_purchase_item_limit,() RETURNS trigger
+FUNCTION,public,financial_summary,"(p_from date, p_to date) RETURNS jsonb"
+FUNCTION,public,get_or_create_distributor,"(p_distributor_id uuid, p_new_distributor_name text) RETURNS uuid"
+FUNCTION,public,import_fbr_reference,"(p_kind text, p_items jsonb, p_replace boolean DEFAULT true) RETURNS integer"
+FUNCTION,public,invoice_price_guard,() RETURNS trigger
+FUNCTION,public,is_owner,() RETURNS boolean
+FUNCTION,public,money_summary,(p_day date) RETURNS jsonb
+FUNCTION,public,my_role_info,() RETURNS jsonb
+FUNCTION,public,record_charging_handover,"(p_id uuid, p_outcome text, p_amount numeric DEFAULT NULL::numeric, p_note text DEFAULT NULL::text) RETURNS void"
+FUNCTION,public,record_payment,"(p_invoice_id uuid, p_amount numeric, p_method text) RETURNS void"
+FUNCTION,public,record_scrap_intake,"(p_invoice_id uuid, p_customer_id uuid, p_customer_name text, p_brand text, p_model text, p_battery_type text, p_battery_number text, p_quantity integer, p_estimated_weight_kg numeric, p_note text, p_received_date date) RETURNS uuid"
+FUNCTION,public,record_supplier_payment,"(p_client_id uuid, p_supplier_id uuid, p_purchase_id uuid, p_amount numeric, p_method text, p_paid_at date, p_reference text, p_cheque_number text, p_cheque_date date, p_bank_name text) RETURNS uuid"
+FUNCTION,public,report_summary,"(p_from date, p_to date, p_bucket text DEFAULT 'day'::text) RETURNS jsonb"
+FUNCTION,public,role_guard,() RETURNS trigger
+FUNCTION,public,role_in,(p_roles text[]) RETURNS boolean
+FUNCTION,public,save_cash_opening_balance,"(p_opening_balance numeric, p_opening_date date) RETURNS void"
+FUNCTION,public,save_supplier,"(p_id uuid, p_name text, p_phone text, p_address text, p_note text, p_ntn_or_cnic text, p_opening_balance numeric, p_opening_balance_date date) RETURNS uuid"
+FUNCTION,public,sell_scrap,"(p_intake_ids uuid[], p_buyer_name text, p_buyer_phone text, p_total_weight_kg numeric, p_rate_per_kg numeric, p_sale_date date, p_note text) RETURNS uuid"
+FUNCTION,public,set_supplier_active,"(p_id uuid, p_is_active boolean) RETURNS void"
+FUNCTION,public,set_updated_at,() RETURNS trigger
+FUNCTION,public,set_user_role,"(p_user_id uuid, p_role text, p_full_name text, p_is_active boolean) RETURNS void"
+FUNCTION,public,supplier_summary,() RETURNS jsonb
+FUNCTION,public,team_list,() RETURNS jsonb
+FUNCTION,public,update_battery_claim_status,"(p_id uuid, p_status text, p_distributor_id uuid, p_note text, p_new_distributor_name text DEFAULT NULL::text) RETURNS void"
+FUNCTION,public,update_charging_job_status,"(p_id uuid, p_status text) RETURNS void"
+FUNCTION,public,update_expense,"(p_expense_id uuid, p_category_id uuid, p_amount numeric, p_expense_date date, p_method text, p_paid_to text, p_reference text, p_cheque_number text, p_cheque_date date, p_bank_name text, p_note text) RETURNS void"
+FUNCTION,public,user_display_names,(p_ids uuid[]) RETURNS jsonb
+TRIGGER,public,battery_claims,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,battery_claims,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,battery_claims,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,battery_claims,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,battery_claims,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,battery_claims,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,battery_claims,battery_claims_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,business_profile,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,business_profile,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,business_profile,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,business_profile,business_profile_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,business_profile,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,business_profile,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,business_profile,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,cash_settings,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner,accountant', 'owner,accountant', 'owner')"
+TRIGGER,public,cash_settings,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner,accountant', 'owner,accountant', 'owner')"
+TRIGGER,public,cash_settings,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,cash_settings,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,cash_settings,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,cash_settings,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner,accountant', 'owner,accountant', 'owner')"
+TRIGGER,public,cash_settings,cash_settings_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,charging_jobs,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,charging_jobs,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,charging_jobs,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,charging_jobs,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,charging_jobs,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,charging_jobs,charging_jobs_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,charging_jobs,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,charging_price_list,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,charging_price_list,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,charging_price_list,charging_price_list_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,charging_price_list,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,customers,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,customers,customers_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,customers,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,customers,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,distributors,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,distributors,distributors_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,distributors,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner', 'owner')"
+TRIGGER,public,distributors,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner', 'owner')"
+TRIGGER,public,distributors,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner', 'owner')"
+TRIGGER,public,distributors,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,distributors,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,expenses,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,expenses,expenses_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,expenses,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,expenses,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,expenses,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner,accountant', 'owner,accountant', 'owner')"
+TRIGGER,public,expenses,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner,accountant', 'owner,accountant', 'owner')"
+TRIGGER,public,expenses,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner,accountant', 'owner,accountant', 'owner')"
+TRIGGER,public,fbr_invoices,fbr_invoices_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,inventory,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,inventory,inventory_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,inventory,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,inventory,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,invoice_items,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner', 'owner')"
+TRIGGER,public,invoice_items,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner', 'owner')"
+TRIGGER,public,invoice_items,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner', 'owner')"
+TRIGGER,public,invoice_items,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,invoice_items,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,invoice_items,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,invoice_items,aa_price_guard | BEFORE INSERT | EXECUTE FUNCTION invoice_price_guard()
+TRIGGER,public,invoices,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,invoices,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,invoices,invoices_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,invoices,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,invoices,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,invoices,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,invoices,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,payments,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner', 'owner')"
+TRIGGER,public,payments,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner', 'owner')"
+TRIGGER,public,payments,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner', 'owner')"
+TRIGGER,public,payments,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,payments,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,payments,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,purchase_invoices,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,purchase_invoices,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,purchase_invoices,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,purchase_invoices,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,purchase_invoices,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,purchase_invoices,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,purchase_invoices,purchase_invoices_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,purchase_items,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,purchase_items,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,purchase_items,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,purchase_items,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,purchase_items,purchase_items_limit | BEFORE INSERT | EXECUTE FUNCTION enforce_purchase_item_limit()
+TRIGGER,public,purchase_items,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,purchase_items,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,scrap_battery_inventory,scrap_battery_inventory_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,scrap_battery_inventory,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,scrap_battery_inventory,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,scrap_battery_inventory,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,scrap_battery_inventory,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,scrap_battery_inventory,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,scrap_battery_inventory,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner,counter_staff', 'owner,counter_staff', 'owner')"
+TRIGGER,public,scrap_battery_sales,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,scrap_battery_sales,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,scrap_battery_sales,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,scrap_battery_sales,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,scrap_battery_sales,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,scrap_battery_sales,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner', 'owner', 'owner')"
+TRIGGER,public,supplier_payments,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,supplier_payments,"aa_role_guard | BEFORE UPDATE | EXECUTE FUNCTION role_guard('owner,accountant', 'owner,accountant', 'owner')"
+TRIGGER,public,supplier_payments,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,supplier_payments,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,supplier_payments,supplier_payments_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,supplier_payments,"aa_role_guard | BEFORE INSERT | EXECUTE FUNCTION role_guard('owner,accountant', 'owner,accountant', 'owner')"
+TRIGGER,public,supplier_payments,"aa_role_guard | BEFORE DELETE | EXECUTE FUNCTION role_guard('owner,accountant', 'owner,accountant', 'owner')"
+TRIGGER,public,user_roles,zz_audit_row_change | AFTER DELETE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,user_roles,user_roles_set_updated_at | BEFORE UPDATE | EXECUTE FUNCTION set_updated_at()
+TRIGGER,public,user_roles,zz_audit_row_change | AFTER UPDATE | EXECUTE FUNCTION audit_row_change()
+TRIGGER,public,user_roles,zz_audit_row_change | AFTER INSERT | EXECUTE FUNCTION audit_row_change()
+EXTENSION,database,pg_stat_statements,version 1.11
+EXTENSION,database,pgcrypto,version 1.3
+EXTENSION,database,plpgsql,version 1.0
+EXTENSION,database,supabase_vault,version 0.3.1
+EXTENSION,database,uuid-ossp,version 1.1
+SIZE/ROWS,public,ai_actions,approx rows: 0 | size: 32 kB
+SIZE/ROWS,public,audit_log,approx rows: 85 | size: 200 kB
+SIZE/ROWS,public,battery_claims,approx rows: 2 | size: 112 kB
+SIZE/ROWS,public,business_profile,approx rows: 1 | size: 32 kB
+SIZE/ROWS,public,cash_settings,approx rows: 1 | size: 24 kB
+SIZE/ROWS,public,charging_jobs,approx rows: 8 | size: 96 kB
+SIZE/ROWS,public,charging_price_list,approx rows: 0 | size: 48 kB
+SIZE/ROWS,public,customers,approx rows: 3 | size: 64 kB
+SIZE/ROWS,public,distributors,approx rows: 5 | size: 64 kB
+SIZE/ROWS,public,expense_categories,approx rows: 11 | size: 48 kB
+SIZE/ROWS,public,expenses,approx rows: 1 | size: 112 kB
+SIZE/ROWS,public,fbr_heartbeat,approx rows: 1 | size: 32 kB
+SIZE/ROWS,public,fbr_invoice_items,approx rows: 0 | size: 24 kB
+SIZE/ROWS,public,fbr_invoices,approx rows: 0 | size: 32 kB
+SIZE/ROWS,public,fbr_reference,approx rows: 0 | size: 24 kB
+SIZE/ROWS,public,fbr_submissions,approx rows: 0 | size: 24 kB
+SIZE/ROWS,public,inventory,approx rows: 68 | size: 112 kB
+SIZE/ROWS,public,invoice_items,approx rows: 25 | size: 64 kB
+SIZE/ROWS,public,invoices,approx rows: 25 | size: 96 kB
+SIZE/ROWS,public,payments,approx rows: 23 | size: 64 kB
+SIZE/ROWS,public,purchase_invoices,approx rows: 7 | size: 128 kB
+SIZE/ROWS,public,purchase_items,approx rows: 10 | size: 64 kB
+SIZE/ROWS,public,scrap_battery_inventory,approx rows: 16 | size: 96 kB
+SIZE/ROWS,public,scrap_battery_sales,approx rows: 0 | size: 32 kB
+SIZE/ROWS,public,stock_movements,approx rows: 11 | size: 48 kB
+SIZE/ROWS,public,supplier_payments,approx rows: 1 | size: 112 kB
+SIZE/ROWS,public,user_roles,approx rows: 2 | size: 32 kB
