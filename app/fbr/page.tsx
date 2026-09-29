@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { can } from "@/lib/roles";
 import { loadRoleInfo } from "@/lib/rolesServer";
 import { FBR_KINDS, type FbrKind } from "@/lib/fbr";
+import { loadFbrReadiness } from "@/lib/fbrHomeLoad";
+import { isReadyForGoLive } from "@/lib/fbrReadiness";
 import FbrListsClient from "./FbrListsClient";
 
 export const metadata: Metadata = { title: "FBR lists" };
@@ -14,6 +16,7 @@ export default async function FbrPage() {
   if (!can(info, "team.manage")) redirect("/");
 
   const supabase = await createClient();
+  const readiness = await loadFbrReadiness();
   const [profile, heartbeat, ...counts] = await Promise.all([
     supabase.from("business_profile").select("business_name,ntn,province,fbr_enabled,fbr_environment,prices_include_tax").maybeSingle(),
     supabase.from("fbr_heartbeat").select("last_seen").maybeSingle(),
@@ -39,6 +42,50 @@ export default async function FbrPage() {
   return (
     <div className="max-w-3xl">
       <PageHeader title="FBR lists" subtitle="The lists FBR uses. Bills and items are checked against them." />
+
+      {readiness && (
+        <section className="card mb-5 p-5" aria-label="Go-live readiness">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-xl font-semibold">Go-live readiness</h2>
+            <span
+              className={`rounded-full px-3 py-1 text-sm font-semibold ${
+                readiness.environment === "production" ? "bg-cell/20 text-cell-deep" : "bg-plate text-lead"
+              }`}
+            >
+              {readiness.environment === "production" ? "PRODUCTION" : "Sandbox"}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-lead">
+            What this app can check for itself. It cannot check PRAL registration or tokens -- see the D6 checklist for those.
+          </p>
+          <ul className="mt-3 space-y-1.5 text-[15px]">
+            <li className={readiness.itemsNotReady === 0 ? "text-cell-deep" : "text-terminal-deep"}>
+              {readiness.itemsNotReady === 0
+                ? "All taxable items have an HS code and GST rate."
+                : `${readiness.itemsNotReady} taxable item(s) still missing an HS code or GST rate.`}
+            </li>
+            <li className={readiness.listsLoaded ? "text-cell-deep" : "text-terminal-deep"}>
+              {readiness.listsLoaded ? "The provinces list is loaded." : "The provinces list has not been loaded yet."}
+            </li>
+            <li className={readiness.senderSeenRecently ? "text-cell-deep" : "text-terminal-deep"}>
+              {readiness.senderSeenRecently ? "The shop PC sender has been seen recently." : "The shop PC sender has not been seen recently."}
+            </li>
+            <li className={readiness.failedCount === 0 && readiness.unknownCount === 0 ? "text-cell-deep" : "text-terminal-deep"}>
+              {readiness.failedCount === 0 && readiness.unknownCount === 0
+                ? "No failed or unknown bills waiting."
+                : `${readiness.failedCount} failed, ${readiness.unknownCount} unknown bill(s) waiting.`}
+            </li>
+          </ul>
+          {readiness.environment === "sandbox" && (
+            <p className="mt-3 text-sm text-lead">
+              {isReadyForGoLive(readiness)
+                ? "These checks all pass. Finish the D6/D8 human steps (real PRAL tokens, IP approval, a first watched day) before switching to Production."
+                : "Fix the items above before switching to Production."}
+            </p>
+          )}
+        </section>
+      )}
+
       <FbrListsClient
         kinds={FBR_KINDS as { kind: FbrKind; label: string; hint: string }[]}
         loaded={loaded}
