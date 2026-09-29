@@ -83,3 +83,39 @@ export async function loadFbrHomeWarnings(): Promise<FbrHomeWarnings | null> {
     return null;
   }
 }
+
+import type { FbrReadiness } from "@/lib/fbrReadiness";
+import { isSenderOffline as _isSenderOffline } from "@/lib/fbrHome";
+
+/**
+ * Go-live readiness (Phase D8). Server only. Returns null when the FBR tables cannot be read.
+ * Unlike loadFbrHomeWarnings, this does not require fbr_enabled -- it is meant to be checked
+ * before switching FBR (and the environment) on for real.
+ */
+export async function loadFbrReadiness(): Promise<FbrReadiness | null> {
+  try {
+    const supabase = await createClient();
+    const [profile, heartbeat, notReady, lists, failed, unknown] = await Promise.all([
+      supabase.from("business_profile").select("fbr_environment").maybeSingle(),
+      supabase.from("fbr_heartbeat").select("last_seen").maybeSingle(),
+      supabase
+        .from("inventory")
+        .select("id", { count: "exact", head: true })
+        .eq("is_taxable", true)
+        .or("hs_code.is.null,fbr_rate_desc.is.null"),
+      supabase.from("fbr_reference").select("kind", { count: "exact", head: true }).eq("kind", "province"),
+      supabase.from("fbr_invoices").select("invoice_id", { count: "exact", head: true }).eq("fbr_status", "failed"),
+      supabase.from("fbr_invoices").select("invoice_id", { count: "exact", head: true }).eq("fbr_status", "unknown"),
+    ]);
+    return {
+      environment: profile.data?.fbr_environment === "production" ? "production" : "sandbox",
+      itemsNotReady: notReady.count ?? 0,
+      listsLoaded: (lists.count ?? 0) > 0,
+      failedCount: failed.count ?? 0,
+      unknownCount: unknown.count ?? 0,
+      senderSeenRecently: !_isSenderOffline((heartbeat.data?.last_seen as string | null) ?? null),
+    };
+  } catch {
+    return null;
+  }
+}
