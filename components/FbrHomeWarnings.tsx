@@ -66,18 +66,6 @@ export default function FbrHomeWarnings({ w }: { w: FbrHomeWarnings }) {
         </div>
       )}
 
-      {w.unreportedTodayCount > 0 && (
-        <div className="rounded-2xl border border-sun/40 bg-sun/20 px-4 py-3.5 text-amber-900">
-          <div className="flex items-start gap-3">
-            <Icon name="alert" className="mt-0.5 h-5 w-5 shrink-0" />
-            <p className="text-[15px] font-medium">
-              {w.unreportedTodayCount} {w.unreportedTodayCount === 1 ? "bill" : "bills"} today had taxable items but{" "}
-              {w.unreportedTodayCount === 1 ? "was" : "were"} saved without an FBR bill.
-            </p>
-          </div>
-          <BillList rows={w.unreportedTodaySample} count={w.unreportedTodayCount} />
-        </div>
-      )}
     </section>
   );
 }
