@@ -20,6 +20,8 @@ import FbrBadge from "../FbrBadge";
 import FbrCard from "./FbrCard";
 import { showFbrBadge, type FbrInfo } from "@/lib/fbrStatus";
 
+const btrim = (s: string) => s.trim();
+
 export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocument; fbr?: FbrInfo | null }) {
   const roleInfo = useRoleInfo();
   const canDeleteBill = can(roleInfo, "sales.delete");
@@ -35,6 +37,13 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
   const [restock, setRestock] = useState(true);
   const [delBusy, setDelBusy] = useState(false);
   const [delError, setDelError] = useState<string | null>(null);
+  const [delBlockedByFbr, setDelBlockedByFbr] = useState(false);
+
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelRestock, setCancelRestock] = useState(true);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -43,6 +52,8 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
   }, [toast]);
 
   const canReceive = inv.status !== "Cancelled" && inv.due_total > 0 && can(roleInfo, "payment.receive");
+  const canCancel = can(roleInfo, "sales.delete") && inv.status !== "Cancelled";
+  const wasSentToFbr = fbr?.status === "sent";
   const kind = inv.buyer_cnic_or_ntn ? regNoKind(inv.buyer_cnic_or_ntn) : null;
 
   function openPayment() {
@@ -91,7 +102,48 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
   function openDelete() {
     setRestock(true);
     setDelError(null);
+    setDelBlockedByFbr(false);
     setDeleting(true);
+  }
+
+  function openCancel() {
+    setCancelReason("");
+    setCancelRestock(true);
+    setCancelError(null);
+    setCancelling(true);
+  }
+
+  async function cancelBill() {
+    if (cancelBusy) return;
+    if (btrim(cancelReason) === "") {
+      setCancelError("Enter a reason for cancelling this bill.");
+      return;
+    }
+    setCancelBusy(true);
+    setCancelError(null);
+    try {
+      const supabase = await getBrowserClient();
+      const { error: dbError } = await supabase.rpc("cancel_invoice", {
+        p_invoice_id: inv.id,
+        p_reason: cancelReason,
+        p_restock: cancelRestock,
+      });
+      if (dbError) {
+        setCancelError(
+          dbError.code === "42883" || dbError.code === "PGRST202"
+            ? "The cancel setup is missing. Run 20_fbr_d7.sql in Supabase, then try again."
+            : friendlyInvoiceError(dbError),
+        );
+        setCancelBusy(false);
+        return;
+      }
+      setCancelling(false);
+      setCancelBusy(false);
+      router.refresh();
+    } catch {
+      setCancelError("The connection dropped. Refresh this page to see if the bill was cancelled before you try again.");
+      setCancelBusy(false);
+    }
   }
 
   async function deleteBill() {
@@ -105,10 +157,45 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
         p_restock: restock,
       });
       if (dbError) {
+        if (dbError.code === "23503" && /fbr_invoices/i.test(dbError.message)) {
+          setDelBlockedByFbr(true);
+          setDelError(
+            "This bill was reported to FBR, so it cannot be deleted the normal way. FBR keeps its own record of it.",
+          );
+        } else {
+          setDelError(
+            dbError.code === "42883" || dbError.code === "PGRST202"
+              ? "The delete setup is missing. Run 06_delete_invoice.sql in Supabase, then try again."
+              : friendlyInvoiceError(dbError),
+          );
+        }
+        setDelBusy(false);
+        return;
+      }
+      router.replace("/sales");
+      router.refresh();
+    } catch {
+      setDelError("The connection dropped. Refresh this page to see if the bill was deleted before you try again.");
+      setDelBusy(false);
+    }
+  }
+
+  /** Only for a SANDBOX test FBR bill: removes its FBR rows first, then deletes it normally. */
+  async function deleteSandboxTestBill() {
+    if (delBusy) return;
+    setDelBusy(true);
+    setDelError(null);
+    try {
+      const supabase = await getBrowserClient();
+      const { error: dbError } = await supabase.rpc("delete_sandbox_fbr_bill", {
+        p_invoice_id: inv.id,
+        p_restock: restock,
+      });
+      if (dbError) {
         setDelError(
           dbError.code === "42883" || dbError.code === "PGRST202"
-            ? "The delete setup is missing. Run 06_delete_invoice.sql in Supabase, then try again."
-            : friendlyInvoiceError(dbError)
+            ? "The setup for this is missing. Run 20_fbr_d7.sql in Supabase, then try again."
+            : friendlyInvoiceError(dbError),
         );
         setDelBusy(false);
         return;
@@ -263,8 +350,22 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
             )}
           </section>
 
-          {canDeleteBill && (
+          {canCancel && (
 <section className="card anim-rise p-5" style={{ "--i": 4 } as React.CSSProperties}>
+            <h2 className="font-display text-2xl font-semibold">Cancel this bill</h2>
+            <p className="mt-2 text-[15px] text-lead">
+              {wasSentToFbr
+                ? "This bill was already reported to FBR. Cancelling it here marks it cancelled in AK Solar only -- FBR keeps its own record. To correct FBR's record, use a debit note."
+                : "Keeps the bill on record but marks it cancelled, and puts the items back in stock."}
+            </p>
+            <button type="button" onClick={openCancel} className="btn btn-danger mt-3">
+              <Icon name="x" className="h-5 w-5" /> Cancel bill
+            </button>
+          </section>
+)}
+
+          {canDeleteBill && (
+<section className="card anim-rise p-5" style={{ "--i": 5 } as React.CSSProperties}>
             <h2 className="font-display text-2xl font-semibold">Delete this bill</h2>
             <p className="mt-2 text-[15px] text-lead">
               Removes the bill, its items and its payments completely. Use this for demo or test bills.
@@ -381,12 +482,81 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
                 {delError}
               </p>
             )}
+            {delBlockedByFbr && fbr?.environment === "sandbox" && (
+              <p className="mt-2 text-sm text-lead">
+                This looks like a sandbox test bill. You can remove its test FBR rows and delete it below.
+              </p>
+            )}
             <div className="mt-6 flex justify-end gap-3">
               <button type="button" onClick={() => setDeleting(false)} disabled={delBusy} autoFocus className="btn btn-quiet">
                 Keep it
               </button>
-              <button type="button" onClick={deleteBill} disabled={delBusy} className="btn btn-danger">
-                {delBusy ? "Deleting" : "Delete bill"}
+              {delBlockedByFbr && fbr?.environment === "sandbox" ? (
+                <button type="button" onClick={deleteSandboxTestBill} disabled={delBusy} className="btn btn-danger">
+                  {delBusy ? "Deleting" : "Delete test FBR bill"}
+                </button>
+              ) : (
+                <button type="button" onClick={deleteBill} disabled={delBusy} className="btn btn-danger">
+                  {delBusy ? "Deleting" : "Delete bill"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelling && (
+        <div className="anim-fade fixed inset-0 z-50 flex items-center justify-center bg-casing/60 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="cancel-title"
+            aria-describedby="cancel-text"
+            className="anim-pop w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+          >
+            <h2 id="cancel-title" className="font-display text-2xl font-bold">
+              Cancel {inv.invoice_number}?
+            </h2>
+            <p id="cancel-text" className="mt-2 text-lead">
+              {inv.buyer_name}, {formatRs(inv.total_value)}. The bill stays on record, marked cancelled.
+              {wasSentToFbr && " This bill was already reported to FBR -- FBR's own record is not changed by this."}
+            </p>
+            <label htmlFor="cancel-reason" className="mt-4 block text-sm font-medium text-lead">
+              Reason
+            </label>
+            <input
+              id="cancel-reason"
+              autoFocus
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              disabled={cancelBusy}
+              placeholder="e.g. Customer changed their mind"
+              className="input mt-1.5"
+            />
+            <label className="mt-4 flex items-start gap-3 rounded-xl bg-plate/70 px-3 py-3 text-[15px]">
+              <input
+                type="checkbox"
+                checked={cancelRestock}
+                onChange={(e) => setCancelRestock(e.target.checked)}
+                disabled={cancelBusy}
+                className="mt-1 h-5 w-5"
+              />
+              <span>
+                <span className="block font-semibold">Put the items back in stock</span>
+                <span className="block text-lead">Turn this off only if the goods really left the shop.</span>
+              </span>
+            </label>
+            {cancelError && (
+              <p role="alert" className="mt-4 rounded-xl bg-terminal/10 px-3 py-2 text-sm text-terminal-deep">
+                {cancelError}
+              </p>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setCancelling(false)} disabled={cancelBusy} className="btn btn-quiet">
+                Keep it
+              </button>
+              <button type="button" onClick={cancelBill} disabled={cancelBusy} className="btn btn-danger">
+                {cancelBusy ? "Cancelling" : "Cancel bill"}
               </button>
             </div>
           </div>
