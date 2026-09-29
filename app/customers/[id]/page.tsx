@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Customer } from "@/lib/types";
 import CustomerProfile, { type CustomerBill } from "./CustomerProfile";
+import type { CustomerPayment } from "./CustomerLedger";
 
 export const metadata: Metadata = { title: "Customer" };
 
@@ -27,12 +28,31 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
 
   if (customer.error || !customer.data) notFound();
 
+  // Payments for the ledger, fetched in small batches so the request address stays short.
+  const billRows = (bills.data ?? []) as CustomerBill[];
+  const ids = billRows.map((b) => b.id);
+  const payments: CustomerPayment[] = [];
+  let paymentsReady = !bills.error;
+  for (let i = 0; i < ids.length; i += 40) {
+    const res = await supabase
+      .from("payments")
+      .select("id,invoice_id,amount,method,paid_at,note")
+      .in("invoice_id", ids.slice(i, i + 40));
+    if (res.error) {
+      paymentsReady = false;
+      break;
+    }
+    payments.push(...((res.data ?? []) as CustomerPayment[]));
+  }
+
   return (
     <CustomerProfile
       customer={customer.data as Customer}
       others={(others.data ?? []) as Pick<Customer, "id" | "name" | "phone">[]}
-      bills={(bills.data ?? []) as CustomerBill[]}
+      bills={billRows}
       billsReady={!bills.error}
+      payments={payments}
+      paymentsReady={paymentsReady}
     />
   );
 }

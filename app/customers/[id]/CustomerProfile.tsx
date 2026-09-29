@@ -16,6 +16,7 @@ import { getBrowserClient } from "@/lib/supabase/lazy";
 import type { Customer, Invoice } from "@/lib/types";
 import PayBadge from "@/app/sales/PayBadge";
 import CustomerForm, { type CustomerLite } from "../CustomerForm";
+import CustomerLedger, { type CustomerPayment } from "./CustomerLedger";
 import RegistrationBadge from "../RegistrationBadge";
 
 export type CustomerBill = Pick<
@@ -56,11 +57,15 @@ export default function CustomerProfile({
   others,
   bills,
   billsReady,
+  payments,
+  paymentsReady,
 }: {
   customer: Customer;
   others: CustomerLite[];
   bills: CustomerBill[];
   billsReady: boolean;
+  payments: CustomerPayment[];
+  paymentsReady: boolean;
 }) {
   const router = useRouter();
   const roleInfo = useRoleInfo();
@@ -267,6 +272,8 @@ export default function CustomerProfile({
           </>
         )}
       </section>
+
+      {billsReady && bills.length > 0 && <CustomerLedger bills={bills} payments={payments} ready={paymentsReady} />}
 
       {editing && <CustomerForm customer={customer} others={others} onClose={closeForm} onSaved={(m) => {
         setEditing(false);
