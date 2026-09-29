@@ -14,9 +14,6 @@ export type FbrHomeWarnings = {
   failedSample: { id: string; invoiceNumber: string; buyerName: string }[];
   unknownCount: number;
   unknownSample: { id: string; invoiceNumber: string; buyerName: string }[];
-  /** Bills saved today with taxable items but with no FBR bill (Owner chose to skip FBR). */
-  unreportedTodayCount: number;
-  unreportedTodaySample: { id: string; invoiceNumber: string; buyerName: string }[];
 };
 
 /** A sender that hasn't reported in for this long is treated as offline. It writes a heartbeat about every minute. */
@@ -30,5 +27,5 @@ export function isSenderOffline(lastSeen: string | null): boolean {
 
 /** True when there is anything worth telling the Owner/Accountant about. */
 export function hasFbrWarning(w: FbrHomeWarnings): boolean {
-  return w.enabled && (w.senderOffline || w.failedCount > 0 || w.unknownCount > 0 || w.unreportedTodayCount > 0);
+  return w.enabled && (w.senderOffline || w.failedCount > 0 || w.unknownCount > 0);
 }
