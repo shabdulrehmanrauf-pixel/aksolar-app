@@ -6,12 +6,15 @@ import { can } from "@/lib/roles";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Avatar from "@/components/Avatar";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import Icon from "@/components/Icons";
 import PageHeader from "@/components/PageHeader";
 import Toast from "@/components/Toast";
 import { offlineDb } from "@/lib/offline/db";
 import { useLiveQuery } from "@/lib/offline/useLiveQuery";
 import { isBrowserOnline } from "@/lib/offline/net";
+import { getBrowserClient } from "@/lib/supabase/lazy";
+import { friendlyDeleteError } from "@/lib/invoices";
 import { customerMatches, formatPhone, formatRegNo, whatsappLink } from "@/lib/customers";
 import type { Customer, RegistrationType } from "@/lib/types";
 import CustomerForm from "./CustomerForm";
@@ -49,6 +52,7 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
   const wantsAdd = useSearchParams().get("add") === "1";
   const roleInfo = useRoleInfo();
   const canEditCust = can(roleInfo, "customers.edit");
+  const canDeleteCust = can(roleInfo, "customers.delete");
 
   // Same rule as InventoryClient: only mirror server props into the offline
   // cache when they are actually fresh (i.e. we're online right now).
@@ -69,6 +73,9 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<Customer | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+  const [delError, setDelError] = useState<string | null>(null);
 
   // Links to /customers?add=1 (top bar, Home, search box) open the Add panel, then tidy the address bar.
   useEffect(() => {
@@ -111,6 +118,31 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
   function openEdit(c: Customer) {
     setEditing(c);
     setFormOpen(true);
+  }
+
+  function openDelete(c: Customer) {
+    setDelError(null);
+    setDeleting(c);
+  }
+
+  async function confirmDelete() {
+    if (!deleting || delBusy) return;
+    if (!isBrowserOnline()) {
+      setDelError("Deleting needs an internet connection. Connect and try again.");
+      return;
+    }
+    setDelBusy(true);
+    setDelError(null);
+    const { error } = await (await getBrowserClient()).from("customers").delete().eq("id", deleting.id);
+    setDelBusy(false);
+    if (error) {
+      setDelError(friendlyDeleteError(error, "customer"));
+      return;
+    }
+    await offlineDb.customers.delete(deleting.id).catch(() => {});
+    setToast(`${deleting.name} deleted.`);
+    setDeleting(null);
+    router.refresh();
   }
 
   function onSaved(message: string) {
@@ -272,6 +304,17 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
                             <Icon name="edit" className="h-[18px] w-[18px]" />
                           </button>
 )}
+                          {canDeleteCust && (
+                            <button
+                              type="button"
+                              onClick={() => openDelete(c)}
+                              aria-label={`Delete ${c.name}`}
+                              title="Delete"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-white text-terminal-deep transition-colors hover:bg-terminal/10"
+                            >
+                              <Icon name="trash" className="h-[18px] w-[18px]" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -297,6 +340,24 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
                     </span>
                     <Icon name="chevron" className="h-4 w-4 shrink-0 text-lead/60" />
                   </Link>
+                  {(canEditCust || canDeleteCust) && (
+                    <div className="flex gap-2 border-t border-line/70 px-4 py-2.5">
+                      {canEditCust && (
+                        <button type="button" onClick={() => openEdit(c)} className="btn btn-quiet btn-sm flex-1">
+                          <Icon name="edit" className="h-4 w-4" /> Edit
+                        </button>
+                      )}
+                      {canDeleteCust && (
+                        <button
+                          type="button"
+                          onClick={() => openDelete(c)}
+                          className="btn btn-quiet btn-sm flex-1 text-terminal-deep"
+                        >
+                          <Icon name="trash" className="h-4 w-4" /> Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {c.phone && (
                     <div className="flex gap-2 border-t border-line/70 bg-plate/40 px-4 py-2.5">
                       <a href={`tel:${c.phone}`} className="btn btn-quiet btn-sm flex-1">
@@ -325,6 +386,19 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
           others={customers.map(({ id, name, phone }) => ({ id, name, phone }))}
           onClose={closeForm}
           onSaved={onSaved}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title={`Delete ${deleting.name}?`}
+          body="This removes the customer from your list. It cannot be undone. A customer who has bills cannot be deleted."
+          confirmLabel="Delete customer"
+          cancelLabel="Keep customer"
+          busy={delBusy}
+          error={delError}
+          onCancel={() => setDeleting(null)}
+          onConfirm={confirmDelete}
         />
       )}
 

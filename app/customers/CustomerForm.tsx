@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Icon from "@/components/Icons";
 import Sheet from "@/components/Sheet";
+import ContactPickButton from "@/components/ContactPickButton";
 import {
   cleanRegNo,
   customerPayload,
@@ -110,6 +111,14 @@ export default function CustomerForm({
         <div className="flex-1 space-y-7 overflow-y-auto px-5 py-6">
           <fieldset className="space-y-4">
             <legend className="mb-3 font-display text-xl font-semibold">Who is it</legend>
+
+            <ContactPickButton
+              className="mb-1"
+              onPick={(c) => {
+                if (c.name) set("name", c.name);
+                if (c.phone) set("phone", c.phone);
+              }}
+            />
 
             <div>
               <label htmlFor="c-name" className="mb-1.5 block text-sm font-medium">
