@@ -307,12 +307,11 @@ export default function NewBill({
   });
   const subtotal = round2(computed.reduce((s, c) => s + c.amount, 0));
 
-  /* ---------- FBR: tick, tax, buyer details ---------- */
-  const anyTaxable = computed.some((c) => c.item.is_taxable !== false);
-  const fbrAuto = fbrSettings.enabled && anyTaxable;
-  // Only the Owner may leave a taxable bill out of FBR. Everyone else is kept ticked.
-  const fbrBill = fbrSettings.enabled && (isOwner ? fbrTick ?? fbrAuto : anyTaxable ? true : fbrTick ?? false);
-  const skippingFbr = fbrSettings.enabled && anyTaxable && !fbrBill;
+  /* ---------- FBR: tick, tax, buyer details ----------
+   * Every bill defaults to NOT an FBR bill, whatever it contains. Only the Owner can turn the
+   * tick on, one bill at a time -- there is no automatic tick and nothing is logged when it is
+   * left off. This is a deliberate shop policy, not the app deciding for you. */
+  const fbrBill = fbrSettings.enabled && isOwner && (fbrTick ?? false);
   const taxInputs: TaxLineInput[] = computed
     .filter((c) => c.qty != null && c.rate != null)
     .map((c) => ({
@@ -530,12 +529,6 @@ export default function NewBill({
     setError(null);
     try {
       const online = await checkRealConnectivity();
-      if (!online && skippingFbr) {
-        setError("A taxable bill without an FBR bill can only be saved while online, so it can be recorded in the activity log.");
-        savingRef.current = false;
-        setSaving(false);
-        return;
-      }
       if (!online) {
         await saveOffline();
         setToast(
@@ -568,9 +561,6 @@ export default function NewBill({
         billParams.p_buyer_province = effectiveProvince;
         billParams.p_buyer_address = effectiveAddress || null;
         billParams.p_created_offline = false;
-      } else if (skippingFbr) {
-        rpcName = "create_unreported_bill";
-        billParams.p_reason = "Owner chose not to make an FBR bill";
       }
       const { data, error: dbError } = await supabase.rpc(rpcName, billParams);
       if (dbError || !data) {
@@ -1291,17 +1281,15 @@ export default function NewBill({
                   type="checkbox"
                   className="mt-1 h-5 w-5"
                   checked={fbrBill}
-                  disabled={!isOwner && anyTaxable}
+                  disabled={!isOwner}
                   onChange={(e) => setFbrTick(e.target.checked)}
                 />
                 <span>
                   <span className="block text-[15px] font-semibold">FBR bill</span>
                   <span className="block text-sm text-lead">
-                    {anyTaxable
-                      ? isOwner
-                        ? "This bill has taxable items, so it is reported to FBR. Only the Owner can untick it."
-                        : "This bill has taxable items, so it must be reported to FBR."
-                      : "No taxable items on this bill. Tick to report it anyway."}
+                    {isOwner
+                      ? "Off by default. Tick to report this specific bill to FBR."
+                      : "Only the Owner can report a bill to FBR."}
                   </span>
                 </span>
               </label>
@@ -1355,11 +1343,6 @@ export default function NewBill({
                 </div>
               )}
 
-              {skippingFbr && (
-                <p className="mt-2 rounded-lg border border-terminal/40 bg-white px-2 py-1 text-sm text-terminal-deep">
-                  Warning: taxable items sold without an FBR bill. This is written to the activity log.
-                </p>
-              )}
               {fbrBill && taxSummary && taxSummary.errors.length > 0 && (
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-terminal-deep">
                   {taxSummary.errors.map((m) => (
