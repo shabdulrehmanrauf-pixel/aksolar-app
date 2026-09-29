@@ -374,7 +374,14 @@ export default function NewBill({
       if (partValue == null || partValue <= 0) return "Enter how much the customer is paying now.";
       if (partValue >= total) return "That is the full amount. Choose Paid in full, or enter a smaller amount.";
     }
-    if (due > 0 && !customer) return "Udhaar needs a customer. Choose a customer, or take the full payment.";
+    if (due > 0 && !customer) {
+      // Udhaar for someone who is not saved yet: the customer is created automatically when the bill is saved.
+      if (!walkinName.trim()) return "Enter the customer's name. For udhaar, the customer is saved automatically with this bill.";
+      const udhaarPhone = normalizePhone(walkinPhone);
+      if (!udhaarPhone || !isValidPhone(udhaarPhone)) {
+        return "Enter the customer's phone number (10 to 15 digits) so you can follow up the udhaar.";
+      }
+    }
     if (!invoiceDate) return "Choose the bill date.";
     if (invoiceDate > today) return "The bill date cannot be in the future.";
     if (!customer) {
@@ -529,6 +536,12 @@ export default function NewBill({
     setError(null);
     try {
       const online = await checkRealConnectivity();
+      if (!online && due > 0 && !customer) {
+        setError("You are offline. To save an udhaar bill offline, choose a saved customer. A new customer can only be saved when you are online.");
+        savingRef.current = false;
+        setSaving(false);
+        return;
+      }
       if (!online) {
         await saveOffline();
         setToast(
@@ -542,18 +555,55 @@ export default function NewBill({
       }
 
       const supabase = await getBrowserClient();
+
+      // Udhaar for a new customer: find (by phone) or create the customer first, then bill them.
+      // If the bill fails after this, a retry finds the same customer by phone, so no duplicate is made.
+      let billCustomerId: string | null = customerId;
+      if (due > 0 && !customerId) {
+        const custPhone = normalizePhone(walkinPhone);
+        const found = await supabase.from("customers").select("id").eq("phone", custPhone).limit(1).maybeSingle();
+        if (found.error) {
+          setError("Could not check the customer list. Check your connection and try again.");
+          savingRef.current = false;
+          setSaving(false);
+          return;
+        }
+        if (found.data?.id) {
+          billCustomerId = found.data.id as string;
+        } else {
+          const created = await supabase
+            .from("customers")
+            .insert({
+              name: walkinName.trim(),
+              phone: custPhone,
+              address: walkinAddress.trim() || null,
+              registration_type: walkinRegType,
+              cnic_or_ntn: cleanRegNo(walkinCnic) || null,
+            })
+            .select("id")
+            .single();
+          if (created.error || !created.data?.id) {
+            setError("The new customer could not be saved, so the bill was not saved. Please try again.");
+            savingRef.current = false;
+            setSaving(false);
+            return;
+          }
+          billCustomerId = created.data.id as string;
+        }
+      }
+
       const billParams: Record<string, unknown> = {
-        p_customer_id: customerId,
-        p_walkin_name: customerId ? null : walkinName.trim() || null,
+        p_customer_id: billCustomerId,
+        p_walkin_name: billCustomerId ? null : walkinName.trim() || null,
         p_note: note.trim() || null,
         p_invoice_date: invoiceDate,
         p_items: computed.map((c) => ({ inventory_id: c.item.id, quantity: c.qty, rate: c.rate })),
         p_paid: paidNow,
         p_method: method,
-        p_walkin_phone: customerId ? null : normalizePhone(walkinPhone) || null,
-        p_walkin_address: customerId ? null : walkinAddress.trim() || null,
-        p_walkin_registration_type: customerId ? null : walkinRegType,
-        p_walkin_cnic_or_ntn: customerId ? null : cleanRegNo(walkinCnic) || null,
+        p_walkin_phone: billCustomerId ? null : normalizePhone(walkinPhone) || null,
+        p_walkin_address: billCustomerId ? null : walkinAddress.trim() || null,
+        p_walkin_registration_type: billCustomerId ? null : walkinRegType,
+        p_walkin_cnic_or_ntn: billCustomerId ? null : cleanRegNo(walkinCnic) || null,
       };
       let rpcName = "create_invoice";
       if (fbrBill) {
@@ -582,7 +632,7 @@ export default function NewBill({
           const weight = rep.weight.trim() ? parseAmount(rep.weight) : null;
           return supabase.rpc("record_scrap_intake", {
             p_invoice_id: data,
-            p_customer_id: customerId,
+            p_customer_id: billCustomerId,
             p_customer_name: customer ? customer.name : walkinName.trim() || "Walk-in customer",
             p_brand: rep.brand.trim(),
             p_model: rep.model.trim(),
@@ -762,7 +812,7 @@ export default function NewBill({
                 ) : (
                   <div>
                     <label htmlFor="walkin" className="text-sm font-medium text-lead">
-                      Walk-in customer. Name on bill (optional)
+                      Walk-in customer. Name on bill{due > 0 ? " (needed for udhaar)" : " (optional)"}
                     </label>
                     <input
                       id="walkin"
@@ -776,7 +826,7 @@ export default function NewBill({
 
                     <div className="mt-3">
                       <label htmlFor="walkin-phone" className="mb-1 block text-sm font-medium text-lead">
-                        Phone (optional)
+                        Phone{due > 0 ? " (needed for udhaar)" : " (optional)"}
                       </label>
                       <input
                         id="walkin-phone"
