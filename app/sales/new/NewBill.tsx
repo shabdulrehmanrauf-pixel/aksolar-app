@@ -172,7 +172,7 @@ export default function NewBill({
   // Old batteries taken in exchange, one optional entry per battery line. See the Replacement type above.
   const [replacements, setReplacements] = useState<Record<string, Replacement>>({});
 
-  // FBR bill: null = follow the automatic choice (ON when the bill has a taxable item).
+  // FBR bill: OFF by default for every bill. The Owner switches it ON per bill with the big switch at the top.
   const [fbrTick, setFbrTick] = useState<boolean | null>(null);
   const [buyerProvince, setBuyerProvince] = useState("");
   const [buyerAddress, setBuyerAddress] = useState("");
@@ -675,7 +675,45 @@ export default function NewBill({
 
   return (
     <div className="pb-44 lg:pb-0">
-      <PageHeader title="New bill" subtitle="Choose a customer, add items, then save." />
+      <PageHeader
+        title="New bill"
+        subtitle="Choose a customer, add items, then save."
+        action={
+          <button
+            type="button"
+            role="switch"
+            aria-checked={fbrBill}
+            disabled={!fbrSettings.enabled || !isOwner}
+            onClick={() => setFbrTick(!fbrBill)}
+            className={`flex min-h-16 items-center gap-4 rounded-2xl border-2 px-5 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+              fbrBill ? "border-emerald-600 bg-emerald-50" : "border-line bg-white"
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`relative inline-block h-9 w-16 shrink-0 rounded-full transition-colors ${fbrBill ? "bg-emerald-600" : "bg-gray-300"}`}
+            >
+              <span
+                className={`absolute top-1 h-7 w-7 rounded-full bg-white shadow transition-all ${fbrBill ? "left-8" : "left-1"}`}
+              />
+            </span>
+            <span>
+              <span className="block font-display text-xl font-bold leading-tight">
+                FBR bill: {fbrBill ? "ON" : "OFF"}
+              </span>
+              <span className="block text-sm text-lead">
+                {!fbrSettings.enabled
+                  ? "FBR is switched off in the shop profile"
+                  : !isOwner
+                    ? "Only the Owner can use this"
+                    : fbrBill
+                      ? "This bill will be reported to FBR"
+                      : "This bill will NOT go to FBR"}
+              </span>
+            </span>
+          </button>
+        }
+      />
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem] lg:items-start">
         <div className="space-y-4">
@@ -1266,34 +1304,11 @@ export default function NewBill({
                   </div>
                 )}
               </>
-            ) : (
-              <div className="flex justify-between">
-                <dt className="text-lead">Sales tax</dt>
-                <dd className="text-lead">{fbrSettings.enabled ? "None (not an FBR bill)" : "Not charged"}</dd>
-              </div>
-            )}
+            ) : null}
           </dl>
 
-          {fbrSettings.enabled && (
+          {fbrBill && (
             <div className="mt-3 rounded-xl border border-line bg-plate p-3">
-              <label className="flex items-start gap-3">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-5 w-5"
-                  checked={fbrBill}
-                  disabled={!isOwner}
-                  onChange={(e) => setFbrTick(e.target.checked)}
-                />
-                <span>
-                  <span className="block text-[15px] font-semibold">FBR bill</span>
-                  <span className="block text-sm text-lead">
-                    {isOwner
-                      ? "Off by default. Tick to report this specific bill to FBR."
-                      : "Only the Owner can report a bill to FBR."}
-                  </span>
-                </span>
-              </label>
-
               {fbrSettings.environment === "sandbox" && fbrBill && (
                 <p className="mt-2 rounded-lg bg-white px-2 py-1 text-sm text-lead">Test mode: this bill goes to the FBR sandbox, not the real FBR.</p>
               )}
