@@ -7,6 +7,8 @@
 */
 import { formatRs } from "./format";
 import { formatDay, formatTime, methodLabel } from "./invoices";
+import { computeFbrPrint, fbrHasNumber, type FbrPrintData } from "./fbrPrint";
+import { makeFbrQr } from "./fbrQr";
 import type { BusinessProfile, Invoice, InvoiceItem, Payment } from "./types";
 
 const PAGE_W = 595.28;
@@ -70,6 +72,18 @@ class Page {
   rect(x: number, y: number, w: number, h: number, gray: number) {
     this.ops.push(`${gray} g ${x.toFixed(2)} ${(PAGE_H - y - h).toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re f 0 g`);
   }
+  /** The FBR QR code, drawn as black squares (no image library needed), size x size points, top-left at x,y. */
+  qr(x: number, y: number, size: number, value: string) {
+    const modules = makeFbrQr(value);
+    if (!modules) return false;
+    const n = modules.length;
+    const s = size / n;
+    this.rect(x, y, size, size, 1); // white quiet-zone background
+    for (let r = 0; r < n; r++)
+      for (let c = 0; c < n; c++)
+        if (modules[r][c]) this.rect(x + c * s, y + r * s, s, s, 0);
+    return true;
+  }
 }
 
 function assemble(pages: Page[]): Uint8Array {
@@ -111,10 +125,16 @@ export type PdfInput = {
   items: InvoiceItem[];
   payments: Payment[];
   seller: BusinessProfile;
+  /** FBR particulars. null/undefined = not an FBR bill (PDF is built exactly as before). */
+  fbr?: FbrPrintData | null;
 };
 
 /** Builds the bill as a PDF (A4). Every amount comes from the saved bill. */
-export function buildInvoicePdf({ invoice: inv, items, payments, seller }: PdfInput): Uint8Array {
+export function buildInvoicePdf({ invoice: inv, items, payments, seller, fbr }: PdfInput): Uint8Array {
+  const isFbr = !!fbr;
+  const hasNumber = isFbr && fbrHasNumber(fbr!);
+  const calc = fbr ? computeFbrPrint(inv.total_value, items, fbr.lines) : null;
+  const cancelled = inv.status === "Cancelled";
   const pages: Page[] = [];
   let pg = new Page();
   pages.push(pg);
@@ -132,12 +152,17 @@ export function buildInvoicePdf({ invoice: inv, items, payments, seller }: PdfIn
     pg.text(M, hy, l, 9);
     hy += 12;
   }
-  pg.text(right, y + 14, "Sale Invoice", 18, true, "right");
+  pg.text(right, y + 14, isFbr ? "Sales Tax Invoice" : "Sale Invoice", 18, true, "right");
   pg.text(right, y + 30, inv.invoice_number, 11, true, "right");
   pg.text(right, y + 43, formatDay(inv.invoice_date), 10, false, "right");
   y = Math.max(hy, y + 52) + 8;
   pg.line(M, y, right, y, 0.4, 1);
   y += 18;
+
+  if (fbr?.environment === "sandbox") {
+    pg.text((M + right) / 2, y, "TEST INVOICE (FBR sandbox). Not a real FBR invoice.", 10, true, "center");
+    y += 16;
+  }
 
   // Buyer
   pg.text(M, y, "BILLED TO", 8, true);
@@ -163,10 +188,12 @@ export function buildInvoicePdf({ invoice: inv, items, payments, seller }: PdfIn
   // Table
   const cSr = M + 2;
   const cDesc = M + 26;
-  const cQty = right - 190;
-  const cRate = right - 105;
+  const cGst = right - 60;
+  const cTax = right - 132;
+  const cQty = calc ? right - 296 : right - 190;
+  const cRate = calc ? right - 200 : right - 105;
   const cAmt = right - 4;
-  const descW = cQty - 14 - cDesc;
+  const descW = (calc ? cQty - 14 : cQty - 14) - cDesc;
 
   function tableHead() {
     pg.rect(M, y - 11, right - M, 20, 0.93);
@@ -174,6 +201,10 @@ export function buildInvoicePdf({ invoice: inv, items, payments, seller }: PdfIn
     pg.text(cDesc, y + 3, "Item", 9, true);
     pg.text(cQty, y + 3, "Qty", 9, true, "right");
     pg.text(cRate, y + 3, "Rate", 9, true, "right");
+    if (calc) {
+      pg.text(cTax, y + 3, "GST", 9, true, "right");
+      pg.text(cGst, y + 3, "GST %", 9, true, "right");
+    }
     pg.text(cAmt, y + 3, "Amount", 9, true, "right");
     y += 22;
   }
@@ -188,11 +219,16 @@ export function buildInvoicePdf({ invoice: inv, items, payments, seller }: PdfIn
       y = M + 12;
       tableHead();
     }
+    const r = calc?.rows[i];
     pg.text(cSr, y + 2, String(i + 1), 10);
     desc.forEach((d, k) => pg.text(cDesc, y + 2 + k * 12.5, d, 10));
     pg.text(cQty, y + 2, String(it.quantity), 10, false, "right");
     pg.text(cRate, y + 2, formatRs(it.rate).replace(/^Rs\s/, ""), 10, false, "right");
-    pg.text(cAmt, y + 2, formatRs(it.total).replace(/^Rs\s/, ""), 10, true, "right");
+    if (r) {
+      pg.text(cTax, y + 2, r.known ? formatRs(r.taxAmount).replace(/^Rs\s/, "") : "-", 10, false, "right");
+      pg.text(cGst, y + 2, r.known ? r.rateDesc || "-" : "-", 10, false, "right");
+    }
+    pg.text(cAmt, y + 2, formatRs(r ? r.payable : it.total).replace(/^Rs\s/, ""), 10, true, "right");
     y += rowH;
     pg.line(M, y - 7, right, y - 7, 0.88, 0.5);
   });
@@ -206,9 +242,24 @@ export function buildInvoicePdf({ invoice: inv, items, payments, seller }: PdfIn
   // Totals
   y += 10;
   const lx = right - 190;
+  if (calc && calc.taxAdded > 0) {
+    pg.text(lx, y, "Items total", 10);
+    pg.text(right, y, formatRs(calc.subtotal), 10, false, "right");
+    y += 13;
+    pg.text(lx, y, "GST added", 10);
+    pg.text(right, y, formatRs(calc.taxAdded), 10, false, "right");
+    y += 15;
+  }
   pg.text(lx, y, "Total", 12, true);
   pg.text(right, y, formatRs(inv.total_value), 14, true, "right");
   y += 18;
+  if (calc && calc.taxIncluded > 0) {
+    for (const l of wrap(`* Sales tax of ${formatRs(calc.taxIncluded)} is already included in the price of the marked items.`, right - lx + 190, 8, false)) {
+      pg.text(lx, y, l, 8);
+      y += 11;
+    }
+    y += 3;
+  }
   pg.text(lx, y, "Paid", 10);
   pg.text(right, y, formatRs(inv.paid_total), 10, false, "right");
   y += 14;
@@ -231,6 +282,38 @@ export function buildInvoicePdf({ invoice: inv, items, payments, seller }: PdfIn
       pg.text(M, y, `${formatDay(p.paid_at.slice(0, 10))}, ${formatTime(p.paid_at)}   ${methodLabel(p.method)}`, 9);
       pg.text(M + 260, y, formatRs(p.amount), 9, false, "right");
       y += 12.5;
+    }
+  }
+
+  // FBR block: number and QR (Version 2, 1 x 1 inch = 72 x 72 points)
+  if (isFbr) {
+    if (y + 90 > PAGE_H - 90) {
+      pg = new Page();
+      pages.push(pg);
+      y = M + 12;
+    }
+    y += 8;
+    pg.line(M, y, right, y, 0.85, 0.5);
+    y += 16;
+    if (hasNumber) {
+      const drew = pg.qr(M, y, 72, fbr!.number!);
+      const tx = M + (drew ? 72 + 16 : 0);
+      pg.text(tx, y + 12, "FBR INVOICE NUMBER", 8, true);
+      pg.text(tx, y + 27, fbr!.number!, 12, true);
+      if (fbr!.submittedAt) {
+        pg.text(tx, y + 41, `Reported to FBR: ${formatDay(fbr!.submittedAt.slice(0, 10))}, ${formatTime(fbr!.submittedAt)}`, 8);
+      }
+      pg.text(tx, y + 55, "Verify this invoice with the FBR Tax Asaan mobile app.", 8);
+      y += 82;
+    } else {
+      pg.text(
+        M,
+        y + 10,
+        cancelled ? "This bill is cancelled and was not sent to FBR." : "FBR invoice number: not received yet.",
+        10,
+        true,
+      );
+      y += 26;
     }
   }
 
