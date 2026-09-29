@@ -90,7 +90,9 @@ export default function PrintView({ doc, fbr: fbrInitial = null }: { doc: Invoic
     setPdfNote(null);
     try {
       const { invoicePdfFile } = await import("@/lib/pdf");
-      const file = invoicePdfFile(doc);
+      // Use the freshest FBR status (fbrHead can be newer than the page's first load, from the wait-for-number poll).
+      const fbrForPdf = fbrInitial && fbrHead ? { ...fbrInitial, ...fbrHead } : fbrInitial;
+      const file = invoicePdfFile({ ...doc, fbr: fbrForPdf });
       const url = URL.createObjectURL(file);
       const a = document.createElement("a");
       a.href = url;
@@ -119,14 +121,9 @@ export default function PrintView({ doc, fbr: fbrInitial = null }: { doc: Invoic
           <Icon name="download" className="h-5 w-5" /> Download PDF
         </button>
         {pdfNote && <p className="w-full text-sm text-terminal-deep">{pdfNote}</p>}
-        {isFbr && (
-          <p className="w-full text-sm text-lead">
-            Download PDF does not have the FBR number and QR yet. To keep a copy with them, use Print and choose Save as PDF.
-          </p>
-        )}
         {isFbr && waiting && (
           <p className="w-full rounded-lg bg-sun/25 px-3 py-2 text-sm font-semibold text-amber-900" role="status">
-            Waiting for the FBR invoice number. It normally takes about 15 seconds, and printing starts by itself.
+            Waiting for the FBR invoice number before the PDF and print carry it. It normally takes about 15 seconds.
           </p>
         )}
         {isFbr && needsNumber && !waiting && (
