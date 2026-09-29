@@ -76,6 +76,11 @@ export function fbrMeaning(info: FbrInfo, billCancelled: boolean): string {
   if (billCancelled && info.status !== "sent") {
     return "This bill is cancelled, so it is not sent to FBR.";
   }
+  if (billCancelled && info.status === "sent") {
+    return info.environment === "sandbox"
+      ? "FBR accepted this bill in the TEST system before it was cancelled here. It is not a real FBR invoice."
+      : "FBR accepted this bill before it was cancelled here. FBR's own record still shows it as accepted -- use a debit note to correct that.";
+  }
   switch (info.status) {
     case "sent":
       return info.environment === "sandbox"
