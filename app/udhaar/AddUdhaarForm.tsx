@@ -6,6 +6,7 @@ import Sheet from "@/components/Sheet";
 import { getBrowserClient } from "@/lib/supabase/lazy";
 import { checkRealConnectivity } from "@/lib/offline/net";
 import { todayKarachi } from "@/lib/invoices";
+import { formatPhone, isValidPhone, normalizePhone } from "@/lib/customers";
 
 export type CustomerPick = { id: string; name: string; phone: string | null };
 
@@ -22,11 +23,17 @@ export default function AddUdhaarForm({
   const today = todayKarachi();
   const [customer, setCustomer] = useState<CustomerPick | null>(null);
   const [search, setSearch] = useState("");
+  // "New customer" mode: the customer is not in the list, so it is created together with the udhaar.
+  const [isNew, setIsNew] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  // Set once the new customer is really saved, so pressing Save again after an error never makes a second one.
+  const [createdId, setCreatedId] = useState<string | null>(null);
   const [number, setNumber] = useState("");
   const [date, setDate] = useState(today);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  const [errors, setErrors] = useState<{ customer?: string; amount?: string; date?: string }>({});
+  const [errors, setErrors] = useState<{ customer?: string; phone?: string; amount?: string; date?: string }>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -47,7 +54,14 @@ export default function AddUdhaarForm({
     if (saving) return;
     const value = Number(amount.replace(/,/g, ""));
     const next: typeof errors = {};
-    if (!customer) next.customer = "Choose a customer.";
+    const phone = normalizePhone(newPhone);
+    if (isNew) {
+      if (!newName.trim()) next.customer = "Enter the customer's name.";
+      else if (newName.trim().length > 120) next.customer = "Name is too long. Use 120 characters or fewer.";
+      if (phone && !isValidPhone(phone)) next.phone = "Enter a phone number with 10 to 15 digits, for example 0300 1234567.";
+      const same = phone && !createdId ? customers.find((c) => c.phone === phone) : undefined;
+      if (same) next.phone = `This phone is already saved for ${same.name}. Search for that customer instead.`;
+    } else if (!customer) next.customer = "Choose a customer.";
     if (!amount.trim() || !Number.isFinite(value) || value <= 0) next.amount = "Enter the amount, more than 0.";
     if (!date) next.date = "Choose the date.";
     else if (date > today) next.date = "The date cannot be in the future.";
@@ -63,8 +77,25 @@ export default function AddUdhaarForm({
     }
     try {
       const supabase = await getBrowserClient();
+      let customerId = customer?.id ?? createdId;
+      let customerName = customer?.name ?? newName.trim();
+      if (isNew && !customerId) {
+        const { data: created, error: cErr } = await supabase
+          .from("customers")
+          .insert({ name: newName.trim(), phone: phone || null, registration_type: "Unregistered" })
+          .select("id,name")
+          .single();
+        if (cErr || !created) {
+          setSaveError(cErr ? `Could not save the customer. ${cErr.message}` : "Could not save the customer.");
+          setSaving(false);
+          return;
+        }
+        customerId = created.id as string;
+        customerName = created.name as string;
+        setCreatedId(customerId);
+      }
       const { error } = await supabase.rpc("add_udhaar_entry", {
-        p_customer_id: customer!.id,
+        p_customer_id: customerId,
         p_invoice_number: number.trim() || null,
         p_invoice_date: date,
         p_amount: value,
@@ -79,7 +110,7 @@ export default function AddUdhaarForm({
         setSaving(false);
         return;
       }
-      onSaved(`Udhaar of Rs ${value.toLocaleString("en-US")} added for ${customer!.name}.`);
+      onSaved(`Udhaar of Rs ${value.toLocaleString("en-US")} added for ${customerName}.`);
     } catch {
       setSaveError("The connection dropped. Check the Udhaar list before you try again.");
       setSaving(false);
@@ -111,14 +142,65 @@ export default function AddUdhaarForm({
 
           {/* Customer */}
           <div>
-            <label htmlFor="ud-customer" className="mb-1.5 block text-sm font-medium">
+            <label htmlFor={isNew ? "ud-newname" : "ud-customer"} className="mb-1.5 block text-sm font-medium">
               Customer
             </label>
-            {customer ? (
+            {isNew ? (
+              <div className="space-y-3 rounded-xl border border-line bg-plate/40 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-cell-deep">New customer</span>
+                  {!createdId && (
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-focus hover:underline"
+                      onClick={() => {
+                        setIsNew(false);
+                        setErrors((p) => ({ ...p, customer: undefined, phone: undefined }));
+                      }}
+                    >
+                      Choose from list
+                    </button>
+                  )}
+                </div>
+                <input
+                  id="ud-newname"
+                  value={newName}
+                  onChange={(e) => {
+                    setNewName(e.target.value);
+                    setErrors((p) => ({ ...p, customer: undefined }));
+                  }}
+                  placeholder="Customer name"
+                  autoComplete="off"
+                  disabled={!!createdId}
+                  aria-invalid={errors.customer ? true : undefined}
+                  className="input"
+                />
+                <div>
+                  <input
+                    id="ud-newphone"
+                    inputMode="tel"
+                    value={newPhone}
+                    onChange={(e) => {
+                      setNewPhone(e.target.value);
+                      setErrors((p) => ({ ...p, phone: undefined }));
+                    }}
+                    placeholder="Phone (optional), e.g. 0300 1234567"
+                    autoComplete="off"
+                    disabled={!!createdId}
+                    aria-invalid={errors.phone ? true : undefined}
+                    className="input"
+                  />
+                  {errors.phone && <p className="mt-1 text-sm text-terminal-deep">{errors.phone}</p>}
+                </div>
+                {createdId && (
+                  <p className="text-sm text-lead">The customer is saved. Press Save udhaar again to finish.</p>
+                )}
+              </div>
+            ) : customer ? (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-plate/60 px-3.5 py-2.5">
                 <span className="min-w-0">
                   <span className="block truncate font-semibold">{customer.name}</span>
-                  {customer.phone && <span className="block text-sm text-lead">{customer.phone}</span>}
+                  {customer.phone && <span className="block text-sm text-lead">{formatPhone(customer.phone)}</span>}
                 </span>
                 <button type="button" className="text-sm font-semibold text-focus hover:underline" onClick={() => setCustomer(null)}>
                   Change
@@ -140,27 +222,35 @@ export default function AddUdhaarForm({
                   className="input"
                 />
                 <ul className="mt-2 divide-y divide-line/60 overflow-hidden rounded-xl border border-line">
-                  {matches.length === 0 ? (
-                    <li className="px-3.5 py-3 text-[15px] text-lead">
-                      No customer found. Save the customer first in Customers, then come back.
+                  {matches.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomer(c);
+                          setErrors((p) => ({ ...p, customer: undefined }));
+                        }}
+                        className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-plate/70"
+                      >
+                        <span className="truncate font-semibold">{c.name}</span>
+                        {c.phone && <span className="shrink-0 text-sm text-lead">{formatPhone(c.phone)}</span>}
+                      </button>
                     </li>
-                  ) : (
-                    matches.map((c) => (
-                      <li key={c.id}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCustomer(c);
-                            setErrors((p) => ({ ...p, customer: undefined }));
-                          }}
-                          className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-plate/70"
-                        >
-                          <span className="truncate font-semibold">{c.name}</span>
-                          {c.phone && <span className="shrink-0 text-sm text-lead">{c.phone}</span>}
-                        </button>
-                      </li>
-                    ))
-                  )}
+                  ))}
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsNew(true);
+                        setNewName(search.trim());
+                        setErrors((p) => ({ ...p, customer: undefined }));
+                      }}
+                      className="flex w-full items-center gap-2 px-3.5 py-3 text-left font-semibold text-focus hover:bg-plate/70"
+                    >
+                      <Icon name="userplus" className="h-5 w-5" />
+                      {search.trim() ? `Add "${search.trim()}" as a new customer` : "Add a new customer"}
+                    </button>
+                  </li>
                 </ul>
               </>
             )}
