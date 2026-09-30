@@ -25,6 +25,7 @@ const delay = (i: number) => ({ "--i": i }) as React.CSSProperties;
 const QUICK_TILES: { href: string; label: string; icon: IconName; tone: string }[] = [
   { href: "/sales/new", label: "New bill", icon: "receipt", tone: "from-yellow-400 to-amber-600 shadow-amber-600/35" },
   { href: "/sales", label: "Sales", icon: "banknote", tone: "from-teal-500 to-cyan-700 shadow-teal-700/30" },
+  { href: "/udhaar", label: "Udhaar", icon: "alert", tone: "from-red-500 to-orange-600 shadow-red-600/35" },
   { href: "/purchases", label: "Purchases", icon: "cart", tone: "from-orange-500 to-red-700 shadow-orange-600/35" },
   { href: "/inventory", label: "Stock", icon: "battery", tone: "from-amber-400 to-orange-500 shadow-amber-500/35" },
   { href: "/customers", label: "Customers", icon: "users", tone: "from-sky-500 to-blue-700 shadow-blue-600/30" },
@@ -122,7 +123,7 @@ export default async function HomePage() {
           label: "Udhaar to collect",
           value: formatRsCompact(summary.udhaar_total),
           sub: `${summary.udhaar_count} open ${summary.udhaar_count === 1 ? "bill" : "bills"}`,
-          href: "/sales?filter=due",
+          href: "/udhaar",
           icon: "alert",
           tone: summary.udhaar_total > 0 ? "bg-terminal/10 text-terminal" : "bg-cell/10 text-cell",
         },
