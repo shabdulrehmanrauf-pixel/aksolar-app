@@ -11,8 +11,8 @@ import Icon, { type IconName } from "@/components/Icons";
 import Toast from "@/components/Toast";
 import { formatPhone, formatRegNo, regNoKind, whatsappLink } from "@/lib/customers";
 import { formatDate, formatRs } from "@/lib/format";
-import { formatDay, friendlyDeleteError } from "@/lib/invoices";
-import { getBrowserClient } from "@/lib/supabase/lazy";
+import { formatDay } from "@/lib/invoices";
+import { deleteCustomerWithBills } from "@/lib/customerDelete";
 import type { Customer, Invoice } from "@/lib/types";
 import PayBadge from "@/app/sales/PayBadge";
 import CustomerForm, { type CustomerLite } from "../CustomerForm";
@@ -89,10 +89,10 @@ export default function CustomerProfile({
   async function confirmDelete() {
     setBusy(true);
     setError(null);
-    const { error } = await (await getBrowserClient()).from("customers").delete().eq("id", customer.id);
+    const { error } = await deleteCustomerWithBills(customer.id);
     if (error) {
       setBusy(false);
-      setError(friendlyDeleteError(error, "customer"));
+      setError(error);
       return;
     }
     router.replace("/customers");
@@ -284,7 +284,7 @@ export default function CustomerProfile({
       {deleting && (
         <ConfirmDialog
           title={`Delete ${customer.name}?`}
-          body="This removes the customer from your list. It cannot be undone. A customer who has bills cannot be deleted."
+          body="This deletes the customer AND all their bills, payments and udhaar. Items on those bills go back into stock. It cannot be undone. A customer who has a bill reported to FBR cannot be deleted."
           confirmLabel="Delete customer"
           cancelLabel="Keep customer"
           busy={busy}
