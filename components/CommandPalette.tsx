@@ -39,6 +39,7 @@ type Hit = {
 const ACTIONS: Hit[] = [
   { key: "a-bill", group: "Jump to", title: "New bill", sub: "Make a sale and take payment", icon: "receipt", href: "/sales/new" },
   { key: "a-sales", group: "Jump to", title: "Sales", sub: "All bills and udhaar", icon: "banknote", href: "/sales" },
+  { key: "a-udhaar", group: "Jump to", title: "Udhaar", sub: "Who owes you money", icon: "alert", href: "/udhaar" },
   { key: "a-reports", group: "Jump to", title: "Reports", sub: "Sales, cash and best sellers", icon: "chart", href: "/reports" },
   { key: "a-home", group: "Jump to", title: "Home", sub: "Overview of your shop", icon: "home", href: "/" },
   { key: "a-stock", group: "Jump to", title: "Inventory", sub: "All batteries, panels and accessories", icon: "battery", href: "/inventory" },

@@ -24,6 +24,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/inventory", label: "Inventory", icon: "battery" },
   { href: "/customers", label: "Customers", icon: "users", desktopOnly: true },
   { href: "/sales", label: "Sales", icon: "receipt" },
+  { href: "/udhaar", label: "Udhaar", icon: "alert", desktopOnly: true },
   { href: "/suppliers", label: "Suppliers", icon: "truck", desktopOnly: true },
   { href: "/purchases", label: "Purchases", icon: "cart", desktopOnly: true },
   { href: "/payments", label: "Payments", icon: "banknote", desktopOnly: true },
