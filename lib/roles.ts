@@ -97,7 +97,8 @@ export type Capability =
   | "cost.view"
   | "reports.view"
   | "team.manage"
-  | "activity.view";
+  | "activity.view"
+  | "udhaar.add";
 
 const ROLES_FOR: Record<Capability, Role[]> = {
   "sales.create": ["owner", "counter_staff"],
@@ -118,6 +119,7 @@ const ROLES_FOR: Record<Capability, Role[]> = {
   "reports.view": ["owner", "accountant"],
   "team.manage": ["owner"],
   "activity.view": ["owner"],
+  "udhaar.add": ["owner"],
 };
 
 export function can(info: RoleInfo, capability: Capability): boolean {
