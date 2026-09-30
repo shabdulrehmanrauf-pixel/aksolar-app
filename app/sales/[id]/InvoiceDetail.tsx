@@ -257,6 +257,13 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line/60">
+                  {items.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-5 py-4 text-lead">
+                        Udhaar entered by hand. This bill has no items, so stock did not change.
+                      </td>
+                    </tr>
+                  )}
                   {items.map((it) => (
                     <tr key={it.id}>
                       <td className="px-5 py-3">
