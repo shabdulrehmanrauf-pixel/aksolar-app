@@ -13,8 +13,7 @@ import Toast from "@/components/Toast";
 import { offlineDb } from "@/lib/offline/db";
 import { useLiveQuery } from "@/lib/offline/useLiveQuery";
 import { isBrowserOnline } from "@/lib/offline/net";
-import { getBrowserClient } from "@/lib/supabase/lazy";
-import { friendlyDeleteError } from "@/lib/invoices";
+import { deleteCustomerWithBills } from "@/lib/customerDelete";
 import { customerMatches, formatPhone, formatRegNo, whatsappLink } from "@/lib/customers";
 import type { Customer, RegistrationType } from "@/lib/types";
 import CustomerForm from "./CustomerForm";
@@ -133,10 +132,10 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
     }
     setDelBusy(true);
     setDelError(null);
-    const { error } = await (await getBrowserClient()).from("customers").delete().eq("id", deleting.id);
+    const { error } = await deleteCustomerWithBills(deleting.id);
     setDelBusy(false);
     if (error) {
-      setDelError(friendlyDeleteError(error, "customer"));
+      setDelError(error);
       return;
     }
     await offlineDb.customers.delete(deleting.id).catch(() => {});
@@ -392,7 +391,7 @@ export default function CustomersClient({ customers: serverCustomers }: { custom
       {deleting && (
         <ConfirmDialog
           title={`Delete ${deleting.name}?`}
-          body="This removes the customer from your list. It cannot be undone. A customer who has bills cannot be deleted."
+          body="This deletes the customer AND all their bills, payments and udhaar. Items on those bills go back into stock. It cannot be undone. A customer who has a bill reported to FBR cannot be deleted."
           confirmLabel="Delete customer"
           cancelLabel="Keep customer"
           busy={delBusy}
