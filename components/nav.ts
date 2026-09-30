@@ -35,6 +35,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Owner only (see lib/roles.ts). On a phone they are under More.
   { href: "/activity", label: "Activity log", icon: "shield", desktopOnly: true },
   { href: "/team", label: "Team", icon: "idcard", desktopOnly: true },
+  { href: "/fbr", label: "FBR lists", icon: "shield", desktopOnly: true },
 ];
 
 export const MORE_ITEM: NavItem = { href: "/more", label: "More", icon: "more" };
