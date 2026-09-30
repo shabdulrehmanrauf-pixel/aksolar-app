@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Icon from "@/components/Icons";
 import PageHeader from "@/components/PageHeader";
 import { formatRs } from "@/lib/format";
@@ -10,7 +11,11 @@ import { offlineDb, type LocalInvoice } from "@/lib/offline/db";
 import { useLiveQuery } from "@/lib/offline/useLiveQuery";
 import { isBrowserOnline } from "@/lib/offline/net";
 import type { Invoice } from "@/lib/types";
+import { useRoleInfo } from "@/components/RoleProvider";
+import Toast from "@/components/Toast";
+import { can } from "@/lib/roles";
 import PayBadge from "../sales/PayBadge";
+import AddUdhaarForm, { type CustomerPick } from "./AddUdhaarForm";
 
 type Sort = "biggest" | "oldest";
 
@@ -44,7 +49,23 @@ function ageLabel(day: string): string {
   return `${n} days old`;
 }
 
-export default function UdhaarClient({ serverInvoices }: { serverInvoices: Invoice[] }) {
+export default function UdhaarClient({
+  serverInvoices,
+  customers = [],
+}: {
+  serverInvoices: Invoice[];
+  customers?: CustomerPick[];
+}) {
+  const router = useRouter();
+  const roleInfo = useRoleInfo();
+  const canAdd = can(roleInfo, "udhaar.add");
+  const [adding, setAdding] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("biggest");
 
@@ -100,7 +121,17 @@ export default function UdhaarClient({ serverInvoices }: { serverInvoices: Invoi
 
   return (
     <div>
-      <PageHeader title="Udhaar" subtitle="Money customers still have to pay you" />
+      <PageHeader
+        title="Udhaar"
+        subtitle="Money customers still have to pay you"
+        action={
+          canAdd && (
+            <button type="button" onClick={() => setAdding(true)} className="btn btn-primary">
+              <Icon name="plus" className="h-5 w-5" /> Add udhaar
+            </button>
+          )
+        }
+      />
 
       {/* The three numbers */}
       <section className="anim-rise mt-5 grid gap-3 sm:grid-cols-3" style={{ "--i": 1 } as React.CSSProperties}>
@@ -146,6 +177,11 @@ export default function UdhaarClient({ serverInvoices }: { serverInvoices: Invoi
           </span>
           <h2 className="mt-3 font-display text-2xl font-semibold">No udhaar</h2>
           <p className="mx-auto mt-1 max-w-sm text-lead">Every bill is paid. Udhaar bills will show here.</p>
+          {canAdd && (
+            <button type="button" onClick={() => setAdding(true)} className="btn btn-quiet mt-4">
+              Add udhaar by hand
+            </button>
+          )}
         </section>
       ) : (
         <>
@@ -262,6 +298,18 @@ export default function UdhaarClient({ serverInvoices }: { serverInvoices: Invoi
           )}
         </>
       )}
+      {adding && (
+        <AddUdhaarForm
+          customers={customers}
+          onClose={() => setAdding(false)}
+          onSaved={(m) => {
+            setAdding(false);
+            setToast(m);
+            router.refresh();
+          }}
+        />
+      )}
+      <Toast message={toast} />
     </div>
   );
 }

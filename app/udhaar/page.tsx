@@ -8,14 +8,18 @@ export const metadata: Metadata = { title: "Udhaar" };
 export default async function UdhaarPage() {
   const supabase = await createClient();
   // Only bills that are not cancelled and still have money due. Oldest bill first.
-  const { data, error } = await supabase
+  const [{ data, error }, customersRes] = await Promise.all([
+    supabase
     .from("invoice_balances")
     .select("*")
     .neq("status", "Cancelled")
     .gt("due_total", 0)
     .order("invoice_date", { ascending: true })
     .order("created_at", { ascending: true })
-    .limit(2000);
+    .limit(2000),
+    // Saved customers, for the "Add udhaar" form.
+    supabase.from("customers").select("id,name,phone").order("name", { ascending: true }).limit(3000),
+  ]);
 
   if (error) {
     return (
@@ -30,5 +34,8 @@ export default async function UdhaarPage() {
     );
   }
 
-  return <UdhaarClient serverInvoices={(data ?? []) as Invoice[]} />;
+  return <UdhaarClient
+      serverInvoices={(data ?? []) as Invoice[]}
+      customers={(customersRes.data ?? []) as { id: string; name: string; phone: string | null }[]}
+    />;
 }
