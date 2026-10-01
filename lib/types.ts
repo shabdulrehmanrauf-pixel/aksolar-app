@@ -136,6 +136,7 @@ export type SupplierBalance = Supplier & {
   balance: number; // positive = we owe them, negative = they owe us (advance)
   last_purchase_date: string | null;
   last_payment_date: string | null;
+  previous_balance_total?: number; // sum of "Previous balance" entries (we owe)
 };
 
 /** One row of the `purchase_balances` view: the purchase bill plus what has been paid and what is still due. */
@@ -198,7 +199,7 @@ export type PaymentDetails = SupplierPayment & {
   purchase_number: string | null;
 };
 
-export type LedgerEntryType = "opening" | "purchase" | "payment";
+export type LedgerEntryType = "opening" | "previous" | "purchase" | "payment";
 
 /** One row of the `supplier_ledger` view: an opening balance, a purchase bill, or a payment, in date
  * order with a running balance. Positive amount/balance = we owe the supplier. */
