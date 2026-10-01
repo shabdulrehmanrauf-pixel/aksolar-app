@@ -12,6 +12,8 @@ import { formatDay } from "@/lib/invoices";
 import { balanceLabel } from "@/lib/suppliers";
 import type { LedgerRow, PurchaseInvoice, Supplier, SupplierBalance } from "@/lib/types";
 import SupplierForm from "../SupplierForm";
+import PreviousBalanceForm from "./PreviousBalanceForm";
+import { getBrowserClient } from "@/lib/supabase/lazy";
 
 const delay = (i: number) => ({ "--i": i }) as React.CSSProperties;
 
@@ -31,11 +33,12 @@ function InfoCard({ icon, label, value, muted, tone }: { icon: IconName; label: 
 
 const ENTRY_ICON: Record<LedgerRow["entry_type"], IconName> = {
   opening: "calendar",
+  previous: "calendar",
   purchase: "truck",
   payment: "banknote",
 };
 
-function LedgerLine({ row }: { row: LedgerRow }) {
+function LedgerLine({ row, onCancel }: { row: LedgerRow; onCancel?: (row: LedgerRow) => void }) {
   return (
     <li className="flex items-center gap-3 px-3 py-3">
       <span
@@ -58,6 +61,11 @@ function LedgerLine({ row }: { row: LedgerRow }) {
           {formatRs(Math.abs(row.amount))}
         </span>
         <span className="block text-xs text-lead">Bal {formatRs(row.running_balance)}</span>
+        {onCancel && row.entry_type === "previous" && (
+          <button type="button" onClick={() => onCancel(row)} className="mt-0.5 text-xs font-medium text-terminal-deep underline">
+            Cancel
+          </button>
+        )}
       </span>
     </li>
   );
@@ -82,6 +90,42 @@ export default function SupplierLedger({
   const roleInfo = useRoleInfo();
   const canManageSuppliers = can(roleInfo, "suppliers.manage");
   const canReceiveStock = can(roleInfo, "purchases.manage");
+  const canAddPrevious = can(roleInfo, "supplierPayments.manage");
+  const [addingPrevious, setAddingPrevious] = useState(false);
+  const [cancelRow, setCancelRow] = useState<LedgerRow | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  async function confirmCancel() {
+    if (!cancelRow?.ref_id) return;
+    if (!cancelReason.trim()) {
+      setCancelError("Write a short reason.");
+      return;
+    }
+    setCancelBusy(true);
+    setCancelError(null);
+    try {
+      const supabase = await getBrowserClient();
+      const { error } = await supabase.rpc("cancel_supplier_previous_balance", {
+        p_id: cancelRow.ref_id,
+        p_reason: cancelReason.trim(),
+      });
+      if (error) {
+        setCancelError(error.message);
+        setCancelBusy(false);
+        return;
+      }
+      setCancelRow(null);
+      setCancelReason("");
+      setCancelBusy(false);
+      setToast("Previous balance cancelled.");
+      router.refresh();
+    } catch {
+      setCancelError("The connection dropped. Try again.");
+      setCancelBusy(false);
+    }
+  }
   const [editing, setEditing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [tab, setTab] = useState<"ledger" | "purchases">("ledger");
@@ -122,6 +166,15 @@ export default function SupplierLedger({
             <Icon name="truck" className="h-5 w-5" /> Receive stock
           </Link>
 )}
+          {canAddPrevious && (
+            <button
+              type="button"
+              onClick={() => setAddingPrevious(true)}
+              className="on-dark btn border border-white/20 bg-white/10 text-white hover:bg-white/20"
+            >
+              <Icon name="plus" className="h-5 w-5" /> Add previous balance
+            </button>
+          )}
           {supplier.balance > 0 && (
             <Link href={`/payments/new?supplier=${supplier.id}`} className="on-dark btn border border-white/20 bg-white/10 text-white hover:bg-white/20">
               <Icon name="banknote" className="h-5 w-5" /> Make payment
@@ -198,12 +251,12 @@ export default function SupplierLedger({
           ) : ledger.length === 0 ? (
             <div className="px-6 py-10 text-center">
               <p className="font-display text-xl font-semibold">Nothing recorded yet</p>
-              <p className="mt-1 text-lead">An opening balance, purchase bills and payments will all show up here.</p>
+              <p className="mt-1 text-lead">Previous balances, purchase bills and payments will all show up here.</p>
             </div>
           ) : (
             <ul className="divide-y divide-line/60 px-2 py-2">
               {ledger.map((row) => (
-                <LedgerLine key={`${row.entry_type}-${row.ref_id ?? row.event_created_at}`} row={row} />
+                <LedgerLine key={`${row.entry_type}-${row.ref_id ?? row.event_created_at}`} row={row} onCancel={canManageSuppliers ? setCancelRow : undefined} />
               ))}
             </ul>
           )
@@ -259,6 +312,46 @@ export default function SupplierLedger({
             router.refresh();
           }}
         />
+      )}
+
+      {addingPrevious && (
+        <PreviousBalanceForm
+          supplierId={supplier.id}
+          supplierName={supplier.name}
+          onClose={() => setAddingPrevious(false)}
+          onSaved={(m) => {
+            setAddingPrevious(false);
+            setToast(m);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {cancelRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-casing/60 p-4">
+          <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+            <h2 className="font-display text-xl font-bold">Cancel this previous balance?</h2>
+            <p className="mt-1 text-sm text-lead">
+              {formatRs(cancelRow.amount)} will be removed from the balance. The entry stays in the activity log.
+            </p>
+            <input
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Reason (e.g. entered by mistake)"
+              className="input mt-4"
+              autoFocus
+            />
+            {cancelError && <p role="alert" className="mt-2 text-sm text-terminal-deep">{cancelError}</p>}
+            <div className="mt-5 flex justify-end gap-3">
+              <button type="button" disabled={cancelBusy} onClick={() => { setCancelRow(null); setCancelReason(""); setCancelError(null); }} className="btn btn-quiet">
+                Keep it
+              </button>
+              <button type="button" disabled={cancelBusy} onClick={confirmCancel} className="btn btn-primary">
+                {cancelBusy ? "Cancelling" : "Cancel entry"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <Toast message={toast} />
