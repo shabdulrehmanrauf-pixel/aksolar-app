@@ -21,6 +21,7 @@ export const ALL_METHODS: { value: string; label: string; hint: string }[] = [
   { value: "cash", label: "Cash", hint: "Cash sales, cash expenses, cash paid to suppliers" },
   { value: "other", label: "Other (customer payments)", hint: "A customer payment marked \"other\". Point this to EasyPaisa or JazzCash if customers usually pay that way." },
   { value: "bank", label: "Bank (customer payments)", hint: "A customer paying by bank transfer" },
+  { value: "pos", label: "POS machine", hint: "Card payments on a POS machine (the money reaches your bank)" },
   { value: "cheque", label: "Cheque", hint: "Cheques you write" },
   { value: "online", label: "Online transfer", hint: "Online transfers you make" },
   { value: "easypaisa", label: "EasyPaisa", hint: "EasyPaisa payments in and out" },
@@ -39,6 +40,7 @@ export function kindForMethod(method: string): CashAccountKind | null {
     case "cash":
       return "cash";
     case "bank":
+    case "pos":
     case "cheque":
     case "online":
       return "bank";
