@@ -25,6 +25,8 @@ const delay = (i: number) => ({ "--i": i }) as React.CSSProperties;
 const QUICK_TILES: { href: string; label: string; icon: IconName; tone: string }[] = [
   { href: "/sales/new", label: "New bill", icon: "receipt", tone: "from-yellow-400 to-amber-600 shadow-amber-600/35" },
   { href: "/sales", label: "Sales", icon: "banknote", tone: "from-teal-500 to-cyan-700 shadow-teal-700/30" },
+  // Owner only: hidden automatically for other roles (lib/roles.ts).
+  { href: "/cash", label: "Cash book", icon: "banknote", tone: "from-emerald-500 to-green-800 shadow-emerald-700/35" },
   { href: "/udhaar", label: "Udhaar", icon: "alert", tone: "from-red-500 to-orange-600 shadow-red-600/35" },
   { href: "/purchases", label: "Purchases", icon: "cart", tone: "from-orange-500 to-red-700 shadow-orange-600/35" },
   { href: "/inventory", label: "Stock", icon: "battery", tone: "from-amber-400 to-orange-500 shadow-amber-500/35" },
