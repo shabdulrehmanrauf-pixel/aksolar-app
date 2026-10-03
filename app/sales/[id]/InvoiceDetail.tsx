@@ -13,6 +13,7 @@ import { formatRs } from "@/lib/format";
 import { formatDay, formatTime, friendlyInvoiceError, methodLabel, parseAmount, PAYMENT_METHODS } from "@/lib/invoices";
 import type { InvoiceDocument } from "@/lib/invoiceDoc";
 import { getBrowserClient } from "@/lib/supabase/lazy";
+import PayNoteField from "@/components/PayNoteField";
 import type { PaymentMethod } from "@/lib/types";
 import PayBadge from "../PayBadge";
 import InvoiceActions from "./InvoiceActions";
@@ -30,6 +31,7 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
   const [paying, setPaying] = useState(false);
   const [amountText, setAmountText] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("cash");
+  const [payNote, setPayNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -83,6 +85,8 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
         p_invoice_id: inv.id,
         p_amount: amount,
         p_method: method,
+        // only sent when typed, so an older database version is never affected
+        ...(method !== "cash" && payNote.trim() ? { p_pay_note: payNote.trim() } : {}),
       });
       if (dbError) {
         setError(friendlyInvoiceError(dbError));
@@ -90,6 +94,7 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
         return;
       }
       setPaying(false);
+      setPayNote("");
       setBusy(false);
       setToast(`${formatRs(amount)} received.`);
       router.refresh();
@@ -345,6 +350,7 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
                   <li key={p.id} className="flex items-center justify-between gap-3 py-2.5">
                     <span>
                       <span className="block font-semibold">{methodLabel(p.method)}</span>
+                      {p.note && <span className="block text-sm text-lead">{p.note}</span>}
                       <span className="block text-sm text-lead">
                         {formatDay(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi" }).format(new Date(p.paid_at)))},{" "}
                         {formatTime(p.paid_at)}
@@ -436,6 +442,7 @@ export default function InvoiceDetail({ doc, fbr = null }: { doc: InvoiceDocumen
                     </option>
                   ))}
                 </select>
+                <PayNoteField id="pay-note-detail" method={method} value={payNote} onChange={setPayNote} />
               </div>
               {error && (
                 <p role="alert" className="rounded-xl bg-terminal/10 px-3 py-2.5 text-[15px] text-terminal-deep">
