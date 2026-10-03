@@ -57,7 +57,8 @@ export type ReportSummary = {
   gross_profit: number;
   cash_received: number;
   received_on_older_bills: number;
-  by_method: { cash: number; bank: number; other: number };
+  // The three newer ones are absent on a database that has not run 21_payment_channels.sql yet.
+  by_method: { cash: number; bank: number; other: number; easypaisa?: number; jazzcash?: number; pos?: number };
   credit_given: number;
   daily: { day: string; sales: number; count: number }[];
   top_items: { description: string; quantity: number; revenue: number }[];
