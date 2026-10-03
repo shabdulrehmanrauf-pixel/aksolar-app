@@ -123,6 +123,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             <Row label="Billed" value={formatRs(s.sales_total)} />
             <Row label="Received in cash" value={formatRs(s.by_method.cash)} />
             <Row label="Received by bank transfer" value={formatRs(s.by_method.bank)} />
+            {(s.by_method.easypaisa ?? 0) > 0 && <Row label="Received by EasyPaisa" value={formatRs(s.by_method.easypaisa ?? 0)} />}
+            {(s.by_method.jazzcash ?? 0) > 0 && <Row label="Received by JazzCash" value={formatRs(s.by_method.jazzcash ?? 0)} />}
+            {(s.by_method.pos ?? 0) > 0 && <Row label="Received by POS machine" value={formatRs(s.by_method.pos ?? 0)} />}
             {s.by_method.other > 0 && <Row label="Received, other" value={formatRs(s.by_method.other)} />}
             <Row label="Total money received" value={formatRs(s.cash_received)} strong />
             <Row label="Of which from older bills (udhaar)" value={formatRs(s.received_on_older_bills)} />
