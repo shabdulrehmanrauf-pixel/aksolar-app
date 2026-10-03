@@ -1,11 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
+import AccountPicker from "@/components/AccountPicker";
 import Icon from "@/components/Icons";
+import { useCashAccounts } from "@/components/useCashAccounts";
 import Sheet from "@/components/Sheet";
 import { activeCategoriesSorted, friendlyExpenseError, validateExpense } from "@/lib/expenses";
 import { focusFirstError } from "@/lib/formFocus";
-import { parseAmount, todayKarachi } from "@/lib/invoices";
+import { addDays, parseAmount, todayKarachi } from "@/lib/invoices";
 import { SUPPLIER_PAYMENT_METHODS } from "@/lib/purchases";
 import { checkRealConnectivity } from "@/lib/offline/net";
 import { getBrowserClient } from "@/lib/supabase/lazy";
@@ -36,6 +38,8 @@ export default function ExpenseForm({
   const [chequeDate, setChequeDate] = useState(expense?.cheque_date ?? todayKarachi());
   const [bankName, setBankName] = useState(expense?.bank_name ?? "");
   const [note, setNote] = useState(expense?.note ?? "");
+  const accountChoices = useCashAccounts();
+  const [accountId, setAccountId] = useState("");
 
   const [errors, setErrors] = useState<ReturnType<typeof validateExpense>>({});
   const [saving, setSaving] = useState(false);
@@ -81,9 +85,16 @@ export default function ExpenseForm({
         p_note: note.trim() || null,
       };
 
+      // With the cash book set up, save through the "from account" versions (same checks, plus the account).
+      // Without it (SQL not run yet) the original functions are used, exactly as before.
+      const withAccount = accountChoices.length > 0;
       const { error } = expense
-        ? await supabase.rpc("update_expense", { p_expense_id: expense.id, ...args })
-        : await supabase.rpc("create_expense", { p_client_id: clientId.current, ...args });
+        ? withAccount
+          ? await supabase.rpc("update_expense_from_account", { p_expense_id: expense.id, p_account_id: accountId || null, ...args })
+          : await supabase.rpc("update_expense", { p_expense_id: expense.id, ...args })
+        : withAccount
+          ? await supabase.rpc("create_expense_from_account", { p_client_id: clientId.current, p_account_id: accountId || null, ...args })
+          : await supabase.rpc("create_expense", { p_client_id: clientId.current, ...args });
 
       if (error) {
         setSaveError(friendlyExpenseError(error));
@@ -167,6 +178,27 @@ export default function ExpenseForm({
                 <label htmlFor="ex-date" className="mb-1.5 block text-sm font-medium">
                   Date
                 </label>
+                <div className="mb-2 flex gap-2">
+                  {[
+                    { label: "Today", value: todayKarachi() },
+                    { label: "Yesterday", value: addDays(todayKarachi(), -1) },
+                  ].map((d) => (
+                    <button
+                      key={d.label}
+                      type="button"
+                      onClick={() => {
+                        setExpenseDate(d.value);
+                        setErrors((prev) => ({ ...prev, expense_date: undefined }));
+                      }}
+                      aria-pressed={expenseDate === d.value}
+                      className={`rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                        expenseDate === d.value ? "border-casing bg-casing text-white" : "border-line bg-white text-lead hover:border-lead/40"
+                      }`}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
                 <input
                   id="ex-date"
                   type="date"
@@ -192,7 +224,10 @@ export default function ExpenseForm({
                 <button
                   key={m.value}
                   type="button"
-                  onClick={() => setMethod(m.value)}
+                  onClick={() => {
+                    setMethod(m.value);
+                    setAccountId("");
+                  }}
                   aria-pressed={method === m.value}
                   className={`rounded-full border px-4 py-2 text-[15px] font-medium transition-colors ${
                     method === m.value ? "border-casing bg-casing text-white" : "border-line bg-white text-lead hover:border-lead/40"
@@ -202,6 +237,16 @@ export default function ExpenseForm({
                 </button>
               ))}
             </div>
+
+            <AccountPicker
+              id="ex-account"
+              choices={accountChoices}
+              method={method}
+              value={accountId}
+              onChange={setAccountId}
+              label="Paid from account"
+              blankLabel={expense ? "Keep the account it already has" : undefined}
+            />
 
             {showCheque && (
               <div className="grid grid-cols-1 gap-3 rounded-2xl bg-plate/60 p-3.5 sm:grid-cols-3">

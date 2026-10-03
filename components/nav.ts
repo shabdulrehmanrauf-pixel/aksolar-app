@@ -29,6 +29,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/purchases", label: "Purchases", icon: "cart", desktopOnly: true },
   { href: "/payments", label: "Payments", icon: "banknote", desktopOnly: true },
   { href: "/expenses", label: "Expenses", icon: "minus", desktopOnly: true },
+  // Owner only (see lib/roles.ts).
+  { href: "/cash", label: "Cash book", icon: "banknote", desktopOnly: true },
   { href: "/reports", label: "Reports", icon: "chart", desktopOnly: true },
   { href: "/battery-services", label: "Battery services", icon: "plug", desktopOnly: true },
   { href: "/scrap", label: "Scrap", icon: "box", desktopOnly: true },
