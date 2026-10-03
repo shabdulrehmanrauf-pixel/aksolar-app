@@ -60,6 +60,7 @@ const ROLES_FOR_PAGE: { prefix: string; roles: Role[] }[] = [
   { prefix: "/sales/new", roles: ["owner", "counter_staff"] },
   { prefix: "/purchases/new", roles: ["owner"] },
   { prefix: "/activity", roles: ["owner"] },
+  { prefix: "/cash", roles: ["owner"] },
   { prefix: "/reports", roles: ["owner", "accountant"] },
   { prefix: "/purchases", roles: ["owner", "accountant"] },
   { prefix: "/suppliers", roles: ["owner", "accountant"] },
