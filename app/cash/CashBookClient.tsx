@@ -263,7 +263,7 @@ export default function CashBookClient({
                     {e.note && <p className="mt-0.5 text-sm text-lead">{e.note}</p>}
                     <div className="mt-1.5 flex flex-wrap gap-3 text-sm">
                       <span className="rounded-full bg-plate px-2.5 py-0.5 text-xs font-medium text-lead">{SOURCE_LABEL[e.source]}</span>
-                      {e.movable && accountsAllowedFor(activeAccounts, e.method ?? "").length > 1 && (
+                      {e.movable && accountsAllowedFor(activeAccounts, e.source === "sale_payment" ? "other" : e.method ?? "").length > 1 && (
                         <button type="button" onClick={() => setMoveTarget(e)} className="font-medium text-focus underline-offset-2 hover:underline">
                           Change account
                         </button>
@@ -610,7 +610,10 @@ function CloseDaySheet({
 /* --------------------------------------------------------------------------------- change account */
 
 function MoveSheet({ entry, accounts, onClose, onSaved }: { entry: CashBookEntry; accounts: CashAccount[]; onClose: () => void; onSaved: (m: string) => void }) {
-  const options = useMemo(() => accountsAllowedFor(accounts, entry.method ?? ""), [accounts, entry.method]);
+  const options = useMemo(
+    () => accountsAllowedFor(accounts, entry.source === "sale_payment" ? "other" : entry.method ?? ""),
+    [accounts, entry.method, entry.source],
+  );
   const [account, setAccount] = useState(entry.account_id);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
