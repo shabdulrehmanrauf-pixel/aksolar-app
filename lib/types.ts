@@ -44,7 +44,7 @@ export type Customer = {
 
 /* ---------- Invoicing (Phase 3) ---------- */
 
-export type PaymentMethod = "cash" | "bank" | "other";
+export type PaymentMethod = "cash" | "bank" | "easypaisa" | "jazzcash" | "pos" | "other";
 export type PaymentStatus = "Paid" | "Partial" | "Credit";
 export type InvoiceStatus = "Valid" | "Cancelled" | "Edited";
 
