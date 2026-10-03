@@ -2,7 +2,9 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import AccountPicker from "@/components/AccountPicker";
 import Icon from "@/components/Icons";
+import { useCashAccounts } from "@/components/useCashAccounts";
 import PageHeader from "@/components/PageHeader";
 import { formatRs } from "@/lib/format";
 import { formatDay, parseAmount, todayKarachi } from "@/lib/invoices";
@@ -82,6 +84,8 @@ export default function NewPayment({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const showCheque = method === "cheque";
+  const accountChoices = useCashAccounts();
+  const [accountId, setAccountId] = useState("");
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -112,8 +116,11 @@ export default function NewPayment({
 
     try {
       const supabase = await getBrowserClient();
-      const { data, error } = await supabase.rpc("record_supplier_payment", {
+      // With the cash book set up, pay through the "from account" version; otherwise exactly as before.
+      const withAccount = accountChoices.length > 0;
+      const { data, error } = await supabase.rpc(withAccount ? "record_supplier_payment_from_account" : "record_supplier_payment", {
         p_client_id: clientId.current,
+        ...(withAccount ? { p_account_id: accountId || null } : {}),
         p_supplier_id: supplierId,
         p_purchase_id: purchaseId,
         p_amount: parseAmount(amountText),
@@ -271,7 +278,10 @@ export default function NewPayment({
               <button
                 key={m.value}
                 type="button"
-                onClick={() => setMethod(m.value)}
+                onClick={() => {
+                  setMethod(m.value);
+                  setAccountId("");
+                }}
                 aria-pressed={method === m.value}
                 className={`rounded-full border px-4 py-2 text-[15px] font-medium transition-colors ${
                   method === m.value ? "border-casing bg-casing text-white" : "border-line bg-white text-lead hover:border-lead/40"
@@ -281,6 +291,8 @@ export default function NewPayment({
               </button>
             ))}
           </div>
+
+          <AccountPicker id="pay-account" choices={accountChoices} method={method} value={accountId} onChange={setAccountId} label="Paid from account" />
 
           {showCheque && (
             <div className="grid grid-cols-1 gap-3 rounded-2xl bg-plate/60 p-3.5 sm:grid-cols-3">

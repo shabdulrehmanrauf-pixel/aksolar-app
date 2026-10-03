@@ -26,6 +26,7 @@ const SHORTCUTS: { href: string; label: string; hint: string; icon: IconName; to
   { href: "/purchases", label: "Purchase bills", hint: "Stock received, by supplier", icon: "cart", tone: "bg-cell/10 text-cell" },
   { href: "/payments", label: "Payments", hint: "Every payment made to suppliers", icon: "banknote", tone: "bg-lead/10 text-casing" },
   { href: "/expenses?add=1", label: "Add expense", hint: "Log rent, salaries, fuel, or any other cost", icon: "minus", tone: "bg-terminal/10 text-terminal-deep" },
+  { href: "/cash", label: "Cash book", hint: "Daily cash, bank and wallet balances", icon: "banknote", tone: "bg-cell/10 text-cell" },
   { href: "/expenses", label: "Expenses", hint: "Every business expense, by category", icon: "minus", tone: "bg-lead/10 text-casing" },
   { href: "/customers", label: "Customers", hint: "Every saved customer", icon: "users", tone: "bg-focus/10 text-focus" },
   { href: "/reports", label: "Reports", hint: "Sales, cash closing and best sellers", icon: "chart", tone: "bg-focus/10 text-focus" },

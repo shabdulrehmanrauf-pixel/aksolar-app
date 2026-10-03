@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Icon from "@/components/Icons";
@@ -106,6 +107,13 @@ export default function CashBookCard({
           <h2 className="font-display text-2xl font-semibold">Cash book</h2>
           <p className="text-sm text-lead">
             {singleDay ? "Count the drawer against this." : "Opening + cash in − cash out, for this period."}
+          </p>
+          <p className="mt-1 text-sm text-lead">
+            This is the older cash-only summary. The{" "}
+            <Link href="/cash" className="font-medium text-focus underline-offset-2 hover:underline">
+              daily Cash book
+            </Link>{" "}
+            (Owner) tracks cash, banks and wallets together.
           </p>
         </div>
         <button type="button" onClick={() => setEditing((v) => !v)} className="btn btn-quiet btn-sm shrink-0">
