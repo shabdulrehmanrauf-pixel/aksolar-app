@@ -32,8 +32,21 @@ export function paymentStatusFor(total: number, paid: number): PaymentStatus {
 export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "cash", label: "Cash" },
   { value: "bank", label: "Bank transfer" },
+  { value: "easypaisa", label: "EasyPaisa" },
+  { value: "jazzcash", label: "JazzCash" },
+  { value: "pos", label: "POS machine" },
   { value: "other", label: "Other" },
 ];
+
+/** The optional "which one?" note under the payment method (stored on the payment). Cash needs none. */
+export const PAY_NOTE_HINT: Record<PaymentMethod, { label: string; placeholder: string } | null> = {
+  cash: null,
+  bank: { label: "Which bank / account (optional)", placeholder: "e.g. Meezan, HBL, account ending 1234" },
+  easypaisa: { label: "Which EasyPaisa (optional)", placeholder: "e.g. 0300-1234567 or the name" },
+  jazzcash: { label: "Which JazzCash (optional)", placeholder: "e.g. 0345-1234567 or the name" },
+  pos: { label: "Which POS machine (optional)", placeholder: "e.g. HBL POS, Meezan POS" },
+  other: { label: "Details (optional)", placeholder: "e.g. cheque number, who paid" },
+};
 
 export function methodLabel(m: PaymentMethod): string {
   return PAYMENT_METHODS.find((x) => x.value === m)?.label ?? m;
