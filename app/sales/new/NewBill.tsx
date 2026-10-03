@@ -37,6 +37,7 @@ import { checkRealConnectivity, isBrowserOnline } from "@/lib/offline/net";
 import { offlineDb, hasIndexedDb, type LocalInvoice } from "@/lib/offline/db";
 import { notifySyncListeners, runSync } from "@/lib/offline/sync";
 import { useLiveQuery } from "@/lib/offline/useLiveQuery";
+import PayNoteField from "@/components/PayNoteField";
 import type { Customer, InventoryItem, InvoiceItem, PaymentMethod, PaymentStatus, RegistrationType } from "@/lib/types";
 import CustomerForm from "@/app/customers/CustomerForm";
 import ManualItemForm from "./ManualItemForm";
@@ -180,6 +181,7 @@ export default function NewBill({
   const [mode, setMode] = useState<PayMode>(initialDraft?.mode ?? "full");
   const [partText, setPartText] = useState(initialDraft?.partText ?? "");
   const [method, setMethod] = useState<PaymentMethod>(initialDraft?.method ?? "cash");
+  const [payNote, setPayNote] = useState("");
 
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -426,6 +428,8 @@ export default function NewBill({
       p_walkin_registration_type: customerId ? null : walkinRegType,
       p_walkin_cnic_or_ntn: customerId ? null : cleanRegNo(walkinCnic) || null,
     };
+    // "Which bank / EasyPaisa / POS" note: only sent when typed, so older database versions are never affected.
+    if (paidNow > 0 && method !== "cash" && payNote.trim()) createInvoiceParams.p_pay_note = payNote.trim();
     if (fbrBill) {
       createInvoiceParams.p_buyer_province = effectiveProvince;
       createInvoiceParams.p_buyer_address = effectiveAddress || null;
@@ -605,6 +609,7 @@ export default function NewBill({
         p_walkin_registration_type: billCustomerId ? null : walkinRegType,
         p_walkin_cnic_or_ntn: billCustomerId ? null : cleanRegNo(walkinCnic) || null,
       };
+      if (paidNow > 0 && method !== "cash" && payNote.trim()) billParams.p_pay_note = payNote.trim();
       let rpcName = "create_invoice";
       if (fbrBill) {
         rpcName = "create_fbr_bill";
@@ -1474,6 +1479,7 @@ export default function NewBill({
                   </option>
                 ))}
               </select>
+              <PayNoteField id="pay-note" method={method} value={payNote} onChange={setPayNote} />
             </div>
           )}
 
